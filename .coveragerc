@@ -1,0 +1,25 @@
+[run]
+source = agents
+omit =
+    tests/*
+    */__init__.py
+    */migrations/*
+    setup*.py
+    conftest.py
+    */venv/*
+
+[report]
+exclude_lines =
+    pragma: no cover
+    def __repr__
+    def __str__
+    raise NotImplementedError
+    if __name__ == .__main__.:
+    pass
+    raise ImportError
+    except ImportError:
+    if TYPE_CHECKING:
+
+[html]
+directory = htmlcov
+title = AutoGen Reporting System Test Coverage Report 
