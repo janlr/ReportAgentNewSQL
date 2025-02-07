@@ -23,7 +23,11 @@ wheels/
 # Virtual Environment
 venv/
 ENV/
+.env
+.venv
 env/
+env.bak/
+venv.bak/
 
 # IDE
 .idea/
@@ -64,4 +68,13 @@ logs/
 reports/
 *.docx
 *.xlsx
-*.pdf 
+*.pdf
+config/*.json
+!config/default.json
+
+# Streamlit secrets
+.streamlit/secrets.toml
+
+# OS
+.DS_Store
+Thumbs.db 

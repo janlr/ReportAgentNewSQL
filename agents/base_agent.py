@@ -1,4 +1,4 @@
-from typing import Dict, Any, Optional
+from typing import Dict, Any, Optional, List
 import logging
 from abc import ABC, abstractmethod
 
@@ -8,12 +8,7 @@ class BaseAgent(ABC):
     def __init__(self, name: str, config: Optional[Dict[str, Any]] = None):
         self.name = name
         self.config = config or {}
-        self._setup_logging()
-    
-    def _setup_logging(self):
-        """Setup logging for the agent."""
-        self.logger = logging.getLogger(f"agent.{self.name}")
-        self.logger.setLevel(logging.INFO)
+        self.logger = logging.getLogger(name)
     
     @abstractmethod
     async def initialize(self) -> bool:
@@ -34,7 +29,7 @@ class BaseAgent(ABC):
         """Log agent activity."""
         self.logger.info(f"{activity}: {details}")
     
-    def validate_input(self, input_data: Dict[str, Any], required_fields: list) -> bool:
+    def validate_input(self, input_data: Dict[str, Any], required_fields: List[str]) -> bool:
         """Validate input data has required fields."""
         return all(field in input_data for field in required_fields)
     

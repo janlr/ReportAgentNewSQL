@@ -4,30 +4,30 @@ import numpy as np
 from datetime import datetime, timedelta
 from pathlib import Path
 import json
-from unittest.mock import Mock, patch
+from unittest.mock import Mock, patch, AsyncMock
 from agents.insight_generator_agent import InsightGeneratorAgent
 
 @pytest.fixture
 def mock_llm_manager():
     """Create a mock LLM manager."""
-    mock_llm = Mock()
+    mock_llm = AsyncMock()
     mock_llm.active_provider = "test_provider"
-    mock_llm.generate_async.return_value = {
-        "content": """
-        Overview:
-        The data shows strong performance across key metrics.
-        
-        Key Findings:
-        - Sales increased by 25% year-over-year
-        - Customer retention rate is at 85%
-        - Top product category is Electronics
-        
-        Recommendations:
-        - Expand the Electronics category
-        - Focus on customer retention programs
-        - Optimize inventory levels
-        """
-    }
+    mock_llm.initialize.return_value = True
+    mock_llm.cleanup.return_value = True
+    mock_llm.generate_async.return_value = """
+    Overview:
+    The data shows strong performance across key metrics.
+    
+    Key Findings:
+    - Sales increased by 25% year-over-year
+    - Customer retention rate is at 85%
+    - Top product category is Electronics
+    
+    Recommendations:
+    - Expand the Electronics category
+    - Focus on customer retention programs
+    - Optimize inventory levels
+    """
     return mock_llm
 
 @pytest.fixture
@@ -52,10 +52,18 @@ def sample_data():
 def insight_agent(tmp_path, mock_llm_manager):
     """Create an instance of InsightGeneratorAgent for testing."""
     config = {
-        "llm_manager": mock_llm_manager,
-        "cache_dir": tmp_path / "insights"
+        "llm_manager": {
+            "provider": "test_provider",
+            "model": "test_model",
+            "api_key": "test_key",
+            "cache_dir": str(tmp_path / "llm_cache")
+        },
+        "cache_dir": str(tmp_path / "insights")
     }
-    return InsightGeneratorAgent(config)
+    
+    with patch("agents.insight_generator_agent.LLMManagerAgent", return_value=mock_llm_manager):
+        agent = InsightGeneratorAgent(config)
+    return agent
 
 @pytest.mark.asyncio
 async def test_initialization(insight_agent):

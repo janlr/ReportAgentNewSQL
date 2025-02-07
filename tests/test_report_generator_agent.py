@@ -4,6 +4,8 @@ import json
 from datetime import datetime
 from typing import Dict, Any
 from unittest.mock import Mock, patch
+import pandas as pd
+import os
 
 from agents.report_generator_agent import ReportGeneratorAgent, ReportTemplate
 
@@ -35,6 +37,18 @@ def sample_config():
 @pytest.fixture
 def agent(sample_config):
     return ReportGeneratorAgent(sample_config)
+
+@pytest.fixture
+def report_generator():
+    config = {
+        "template_dir": "./templates",
+        "output_dir": "./reports"
+    }
+    return ReportGeneratorAgent(
+        config=config,
+        output_dir="./test_reports",
+        openai_api_key="test_key"
+    )
 
 class TestNaturalLanguageProcessing:
     """Test cases for natural language prompt parsing."""
@@ -240,6 +254,23 @@ class TestComplexReportGeneration:
         # Test with invalid configuration
         with pytest.raises(Exception):
             agent.generate_query(None)
+
+@pytest.mark.asyncio
+async def test_initialization(report_generator):
+    success = await report_generator.initialize()
+    assert success == True
+    assert Path("./test_reports").exists()
+
+@pytest.mark.asyncio
+async def test_process_invalid_input(report_generator):
+    result = await report_generator.process({"action": "invalid"})
+    assert result["success"] == False
+    assert "error" in result
+
+@pytest.mark.asyncio
+async def test_cleanup(report_generator):
+    success = await report_generator.cleanup()
+    assert success == True
 
 if __name__ == "__main__":
     pytest.main([__file__]) 

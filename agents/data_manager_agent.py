@@ -6,14 +6,18 @@ from pathlib import Path
 import hashlib
 from datetime import datetime
 import sqlite3
+import numpy as np
 from .base_agent import BaseAgent
 
 class DataManagerAgent(BaseAgent):
-    """Agent responsible for data operations and favorites management."""
+    """Agent responsible for data cleaning, transformation, and management."""
     
     def __init__(self, config: Dict[str, Any]):
+        """Initialize with configuration."""
         super().__init__("data_manager_agent")
         self.config = config
+        self.cache_dir = Path(config.get("cache_dir", "./cache"))
+        self.cache_dir.mkdir(parents=True, exist_ok=True)
         
         # Set up directories
         self.data_dir = Path(config.get("data_dir", "./data"))
@@ -60,53 +64,121 @@ class DataManagerAgent(BaseAgent):
             conn.commit()
     
     async def initialize(self) -> bool:
-        """Initialize the data manager."""
+        """Initialize data manager resources."""
         try:
-            self.logger.info("Initializing data manager")
+            # Initialize cache and any other resources
+            self.logger.info("Data manager agent initialized successfully")
             return True
         except Exception as e:
             self.logger.error(f"Error initializing data manager: {str(e)}")
             return False
     
+    async def cleanup(self) -> bool:
+        """Clean up data manager resources."""
+        try:
+            # Cleanup resources
+            self.logger.info("Data manager agent cleaned up successfully")
+            return True
+        except Exception as e:
+            self.logger.error(f"Error cleaning up data manager: {str(e)}")
+            return False
+    
     async def process(self, input_data: Dict[str, Any]) -> Dict[str, Any]:
         """Process data management requests."""
-        action = input_data.get("action")
-        
-        if not action:
-            raise ValueError("Action not specified in input data")
-        
         try:
-            if action == "import_excel":
+            if not self.validate_input(input_data, ["action", "data"]):
+                raise ValueError("Missing required fields: action, data")
+            
+            action = input_data["action"]
+            data = input_data["data"]
+            
+            if action == "clean_data":
+                return await self._clean_data(data)
+            elif action == "transform_data":
+                return await self._transform_data(data)
+            elif action == "import_excel":
                 file_path = input_data.get("file_path")
                 sheet_name = input_data.get("sheet_name")
                 return await self._import_excel(file_path, sheet_name)
-            
             elif action == "add_favorite":
                 return await self._add_favorite(input_data)
-            
             elif action == "get_favorite":
                 favorite_id = input_data.get("favorite_id")
                 return await self._get_favorite(favorite_id)
-            
             elif action == "list_favorites":
                 report_type = input_data.get("report_type")
                 tags = input_data.get("tags")
                 return await self._list_favorites(report_type, tags)
-            
             elif action == "delete_favorite":
                 favorite_id = input_data.get("favorite_id")
                 return await self._delete_favorite(favorite_id)
-            
             else:
                 raise ValueError(f"Unknown action: {action}")
                 
         except Exception as e:
-            self.logger.error(f"Error processing data request: {str(e)}")
-            raise
+            self.logger.error(f"Error processing data: {str(e)}")
+            return {"success": False, "error": str(e)}
     
-    async def cleanup(self):
-        """Clean up data manager resources."""
-        self.logger.info("Cleaning up data manager resources")
+    def _clean_data(self, df: pd.DataFrame) -> Dict[str, Any]:
+        """Clean and preprocess data."""
+        try:
+            # Create a copy to avoid modifying the original
+            cleaned = df.copy()
+            
+            # Remove duplicate rows
+            cleaned = cleaned.drop_duplicates()
+            
+            # Handle missing values
+            for column in cleaned.columns:
+                if cleaned[column].dtype in [np.float64, np.int64]:
+                    # Fill numeric missing values with median
+                    cleaned[column] = cleaned[column].fillna(cleaned[column].median())
+                else:
+                    # Fill categorical missing values with mode
+                    cleaned[column] = cleaned[column].fillna(cleaned[column].mode()[0] if not cleaned[column].mode().empty else "Unknown")
+            
+            # Convert date columns
+            date_columns = cleaned.select_dtypes(include=['datetime64']).columns
+            for column in date_columns:
+                cleaned[column] = pd.to_datetime(cleaned[column], errors='coerce')
+            
+            # Handle outliers in numeric columns
+            numeric_columns = cleaned.select_dtypes(include=[np.number]).columns
+            for column in numeric_columns:
+                Q1 = cleaned[column].quantile(0.25)
+                Q3 = cleaned[column].quantile(0.75)
+                IQR = Q3 - Q1
+                lower_bound = Q1 - 1.5 * IQR
+                upper_bound = Q3 + 1.5 * IQR
+                cleaned[column] = cleaned[column].clip(lower=lower_bound, upper=upper_bound)
+            
+            return {
+                "success": True,
+                "data": cleaned
+            }
+            
+        except Exception as e:
+            self.logger.error(f"Error cleaning data: {str(e)}")
+            return {"success": False, "error": str(e)}
+    
+    def _transform_data(self, df: pd.DataFrame) -> Dict[str, Any]:
+        """Apply a series of transformations to the data."""
+        try:
+            transformed = df.copy()
+            
+            # Apply transformations
+            # This is a placeholder implementation. You might want to implement
+            # the actual transformation logic here based on the transformations
+            # specified in the input data.
+            
+            return {
+                "success": True,
+                "data": transformed
+            }
+            
+        except Exception as e:
+            self.logger.error(f"Error applying transformations: {str(e)}")
+            return {"success": False, "error": str(e)}
     
     async def _import_excel(self, file_path: str, sheet_name: Optional[str] = None) -> Dict[str, Any]:
         """Import data from an Excel file."""
