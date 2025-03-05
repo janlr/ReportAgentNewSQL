@@ -1,148 +1,264 @@
 from typing import Dict, Any, List, Optional
-from .base_agent import BaseAgent
+from pathlib import Path
+import logging
+import json
+import hashlib
 import pandas as pd
 import numpy as np
 from datetime import datetime
-import logging
-import json
-from pathlib import Path
+from scipy import stats
+from .base_agent import BaseAgent
+from .llm_manager_agent import LLMManagerAgent
 
 class InsightGeneratorAgent(BaseAgent):
     """Agent responsible for generating insights and summaries using LLM."""
     
-    def __init__(self, config: Optional[Dict[str, Any]] = None):
-        super().__init__("insight_generator", config)
-        self.llm_manager = config.get("llm_manager")
+    def __init__(self, config: Dict[str, Any]):
+        """Initialize with configuration."""
+        super().__init__(config)
+        self.required_config = ["llm_manager", "cache_dir"]
         self.cache_dir = Path(config.get("cache_dir", "./cache/insights"))
-        self.cache_dir.mkdir(parents=True, exist_ok=True)
-    
+        
+        # Validate LLM manager configuration
+        if "llm_manager" not in config:
+            raise ValueError("LLM manager configuration is required")
+        
+        self.llm_config = config["llm_manager"]
+        if not all(k in self.llm_config for k in ["provider", "model"]):
+            raise ValueError("LLM manager configuration must include provider and model")
+        
+        # Initialize LLM manager
+        self.llm_manager = LLMManagerAgent(self.llm_config)
+            
     async def initialize(self) -> bool:
-        """Initialize insight generation resources."""
-        try:
-            if not self.llm_manager:
-                raise ValueError("LLM manager not provided")
-            
-            self.log_activity("initialized", {"llm_provider": self.llm_manager.active_provider})
-            return True
-        except Exception as e:
-            await self.handle_error(e, {"action": "initialize"})
+        """Initialize the insight generator agent."""
+        if not self.validate_config(self.required_config):
             return False
-    
-    async def process(self, input_data: Dict[str, Any]) -> Dict[str, Any]:
-        """Process insight generation requests."""
-        try:
-            if not self.validate_input(input_data, ["action"]):
-                raise ValueError("Invalid input data")
             
-            action = input_data["action"]
-            if action == "generate_summary":
-                return await self._generate_summary(input_data)
-            elif action == "generate_insights":
-                return await self._generate_insights(input_data)
-            else:
-                raise ValueError(f"Unknown action: {action}")
-                
-        except Exception as e:
-            return await self.handle_error(e, {"input": input_data})
-    
-    async def cleanup(self) -> bool:
-        """Cleanup insight generation resources."""
+        # Create cache directory
+        self.cache_dir.mkdir(parents=True, exist_ok=True)
+        
+        # Initialize LLM manager
+        self.logger.info(f"Initializing LLM manager with provider: {self.llm_config['provider']}")
+        if not await self.llm_manager.initialize():
+            raise RuntimeError("Failed to initialize LLM manager")
+        
+        self.logger.info("Insight generator agent initialized successfully")
         return True
     
-    async def _generate_summary(self, input_data: Dict[str, Any]) -> Dict[str, Any]:
-        """Generate a summary of the data and results."""
-        if not self.validate_input(input_data, ["data", "metadata"]):
-            raise ValueError("Data or metadata not provided")
-        
+    async def cleanup(self) -> bool:
+        """Clean up insight generator resources."""
         try:
-            data = pd.DataFrame(input_data["data"])
-            metadata = input_data["metadata"]
-            report_type = input_data.get("report_type", "general")
+            # Clean up LLM manager
+            if not await self.llm_manager.cleanup():
+                self.logger.warning("Failed to clean up LLM manager")
             
-            # Generate cache key
-            cache_key = self._generate_cache_key(data, metadata, report_type)
-            cache_file = self.cache_dir / f"{cache_key}.json"
+            self.logger.info("Insight generator agent cleaned up successfully")
+            return True
+        except Exception as e:
+            self.logger.error(f"Error cleaning up insight generator agent: {str(e)}")
+            return False
+    
+    async def process(self, request: Dict[str, Any]) -> Dict[str, Any]:
+        """Process insight generation requests."""
+        try:
+            action = request.get("action")
+            if not action:
+                return {"success": False, "error": "No action specified"}
             
-            # Check cache
-            if cache_file.exists():
-                with open(cache_file, "r") as f:
-                    cached_result = json.load(f)
+            if action == "generate_insights":
+                return await self._generate_insights(request.get("parameters", {}))
+            elif action == "analyze_trends":
+                return await self._analyze_trends(request.get("parameters", {}))
+            else:
+                return {"success": False, "error": f"Unknown action: {action}"}
+                
+        except Exception as e:
+            self.logger.error(f"Error processing insight request: {str(e)}")
+            return {"success": False, "error": str(e)}
+    
+    async def _generate_insights(self, parameters: Dict[str, Any]) -> Dict[str, Any]:
+        """Generate insights from data."""
+        # TODO: Implement actual insight generation
+        return {
+            "success": True,
+            "data": {
+                "insights": [],
+                "recommendations": []
+            }
+        }
+    
+    async def _analyze_trends(self, parameters: Dict[str, Any]) -> Dict[str, Any]:
+        """Analyze trends in the data."""
+        # TODO: Implement actual trend analysis
+        return {
+            "success": True,
+            "data": {
+                "trends": [],
+                "patterns": []
+            }
+        }
+    
+    def _generate_summary(self, df: pd.DataFrame, metadata: Dict[str, Any]) -> Dict[str, Any]:
+        """Generate a summary of the data with insights."""
+        try:
+            summary = {
+                "summary": "",
+                "findings": "",
+                "recommendations": ""
+            }
+            
+            # Basic statistics
+            num_rows = len(df)
+            num_cols = len(df.columns)
+            numeric_cols = df.select_dtypes(include=[np.number]).columns
+            categorical_cols = df.select_dtypes(include=['object', 'category']).columns
+            date_cols = df.select_dtypes(include=['datetime64']).columns
+            
+            # Generate summary text
+            summary["summary"] = f"""
+            Dataset Overview:
+            - Total records: {num_rows:,}
+            - Total features: {num_cols}
+            - Numeric features: {len(numeric_cols)}
+            - Categorical features: {len(categorical_cols)}
+            - Date features: {len(date_cols)}
+            """
+            
+            # Generate findings
+            findings = []
+            
+            # Analyze numeric columns
+            for col in numeric_cols:
+                stats_dict = df[col].describe()
+                
+                # Check for outliers
+                Q1 = stats_dict['25%']
+                Q3 = stats_dict['75%']
+                IQR = Q3 - Q1
+                outliers = df[(df[col] < Q1 - 1.5 * IQR) | (df[col] > Q3 + 1.5 * IQR)][col]
+                
+                if len(outliers) > 0:
+                    findings.append(f"- {col} has {len(outliers)} outliers ({(len(outliers)/num_rows*100):.1f}% of data)")
+                
+                # Check for skewness
+                skewness = df[col].skew()
+                if abs(skewness) > 1:
+                    findings.append(f"- {col} shows {'positive' if skewness > 0 else 'negative'} skewness ({skewness:.2f})")
+            
+            # Analyze categorical columns
+            for col in categorical_cols:
+                unique_vals = df[col].nunique()
+                if unique_vals == 1:
+                    findings.append(f"- {col} has only one unique value")
+                elif unique_vals/num_rows > 0.9:
+                    findings.append(f"- {col} has high cardinality ({unique_vals} unique values)")
+            
+            # Analyze date columns
+            for col in date_cols:
+                date_range = df[col].max() - df[col].min()
+                findings.append(f"- {col} spans {date_range.days} days")
+            
+            summary["findings"] = "\n".join(findings)
+            
+            # Generate recommendations
+            recommendations = []
+            
+            # Recommendations based on findings
+            if any("outliers" in finding for finding in findings):
+                recommendations.append("- Consider handling outliers through removal or transformation")
+            
+            if any("skewness" in finding for finding in findings):
+                recommendations.append("- Consider applying transformations to handle skewed distributions")
+            
+            if any("high cardinality" in finding for finding in findings):
+                recommendations.append("- Consider feature engineering or dimensionality reduction for high cardinality features")
+            
+            summary["recommendations"] = "\n".join(recommendations)
+            
+            return summary
+            
+        except Exception as e:
+            self.logger.error(f"Error generating summary: {str(e)}")
+            return {
+                "summary": "Error generating summary",
+                "findings": str(e),
+                "recommendations": "Please check the data and try again"
+            }
+    
+    def _analyze_data(self, df: pd.DataFrame, analysis_type: str, parameters: Dict[str, Any]) -> Dict[str, Any]:
+        """Perform specific analysis on the data."""
+        try:
+            if analysis_type == "correlation":
+                # Correlation analysis
+                numeric_df = df.select_dtypes(include=[np.number])
+                corr_matrix = numeric_df.corr()
+                
+                # Find strong correlations
+                strong_corr = []
+                for i in range(len(corr_matrix.columns)):
+                    for j in range(i):
+                        if abs(corr_matrix.iloc[i, j]) > 0.7:
+                            strong_corr.append({
+                                "feature1": corr_matrix.columns[i],
+                                "feature2": corr_matrix.columns[j],
+                                "correlation": corr_matrix.iloc[i, j]
+                            })
+                
                 return {
-                    "success": True,
-                    "summary": cached_result["summary"],
-                    "from_cache": True
+                    "correlation_matrix": corr_matrix.to_dict(),
+                    "strong_correlations": strong_corr
                 }
             
-            # Prepare data statistics
-            stats = self._calculate_statistics(data)
+            elif analysis_type == "time_series":
+                date_col = parameters.get("date_column")
+                value_col = parameters.get("value_column")
+                
+                if not date_col or not value_col:
+                    raise ValueError("Date and value columns are required for time series analysis")
+                
+                # Resample data
+                df[date_col] = pd.to_datetime(df[date_col])
+                resampled = df.set_index(date_col)[value_col].resample('D').mean()
+                
+                # Calculate trends
+                rolling_mean = resampled.rolling(window=7).mean()
+                rolling_std = resampled.rolling(window=7).std()
+                
+                return {
+                    "original_data": resampled.to_dict(),
+                    "trend": rolling_mean.to_dict(),
+                    "volatility": rolling_std.to_dict()
+                }
             
-            # Generate prompt based on report type
-            prompt = self._generate_prompt(report_type, stats, metadata)
+            elif analysis_type == "distribution":
+                column = parameters.get("column")
+                
+                if not column:
+                    raise ValueError("Column name is required for distribution analysis")
+                
+                # Calculate distribution statistics
+                stats_dict = df[column].describe()
+                skewness = df[column].skew()
+                kurtosis = df[column].kurtosis()
+                
+                # Perform normality test
+                _, p_value = stats.normaltest(df[column].dropna())
+                
+                return {
+                    "statistics": stats_dict.to_dict(),
+                    "skewness": skewness,
+                    "kurtosis": kurtosis,
+                    "is_normal": p_value > 0.05,
+                    "p_value": p_value
+                }
             
-            # Generate summary using LLM
-            llm_response = await self.llm_manager.generate_async({
-                "prompt": prompt,
-                "max_tokens": 500
-            })
-            
-            summary = {
-                "overview": llm_response["content"],
-                "key_findings": self._extract_key_findings(llm_response["content"]),
-                "recommendations": self._extract_recommendations(llm_response["content"]),
-                "generated_at": datetime.now().isoformat()
-            }
-            
-            # Cache the result
-            with open(cache_file, "w") as f:
-                json.dump({"summary": summary}, f)
-            
-            return {
-                "success": True,
-                "summary": summary,
-                "from_cache": False
-            }
+            else:
+                raise ValueError(f"Unsupported analysis type: {analysis_type}")
             
         except Exception as e:
-            return await self.handle_error(e, {"action": "generate_summary"})
-    
-    async def _generate_insights(self, input_data: Dict[str, Any]) -> Dict[str, Any]:
-        """Generate detailed insights from the data."""
-        if not self.validate_input(input_data, ["data"]):
-            raise ValueError("Data not provided")
-        
-        try:
-            data = pd.DataFrame(input_data["data"])
-            insight_type = input_data.get("insight_type", "comprehensive")
-            
-            insights = []
-            
-            if insight_type in ["basic", "comprehensive"]:
-                # Statistical insights
-                stats_insights = self._generate_statistical_insights(data)
-                insights.extend(stats_insights)
-            
-            if insight_type == "comprehensive":
-                # Trend insights
-                if self._has_time_column(data):
-                    trend_insights = await self._generate_trend_insights(data)
-                    insights.extend(trend_insights)
-                
-                # Correlation insights
-                if len(data.select_dtypes(include=[np.number]).columns) >= 2:
-                    correlation_insights = self._generate_correlation_insights(data)
-                    insights.extend(correlation_insights)
-                
-                # Anomaly insights
-                anomaly_insights = self._generate_anomaly_insights(data)
-                insights.extend(anomaly_insights)
-            
-            return {
-                "success": True,
-                "insights": insights
-            }
-            
-        except Exception as e:
-            return await self.handle_error(e, {"action": "generate_insights"})
+            self.logger.error(f"Error analyzing data: {str(e)}")
+            return {}
     
     def _calculate_statistics(self, data: pd.DataFrame) -> Dict[str, Any]:
         """Calculate basic statistics from the data."""

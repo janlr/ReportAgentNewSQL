@@ -1,66 +1,31 @@
-# AutoGen-Powered Reporting Agent System
+# ReportAgentNewSQL
 
-A powerful multi-agent system for automated report generation, data analysis, and visualization using AutoGen framework.
+An intelligent reporting system powered by AutoGen that generates insights and reports from SQL databases.
 
 ## Features
 
-- **Multi-Agent Architecture**: Orchestrated system of specialized agents for different aspects of report generation
-- **Intelligent Data Discovery**: Automated database exploration and relationship mapping
-- **Dynamic Visualization**: Support for multiple visualization libraries and interactive dashboards
-- **Flexible Report Generation**: Multiple output formats including HTML, PDF, and Jupyter notebooks
-- **Interactive Dashboards**: Streamlit-based web dashboards with real-time filtering
-- **Email Integration**: Automated report delivery via email
-- **Extensible Design**: Plugin-based architecture for adding new data sources and visualization types
-
-## System Architecture
-
-### Core Agents
-
-1. **Master Orchestrator Agent**
-   - Workflow orchestration and monitoring
-   - Agent task delegation
-   - Error handling and recovery
-
-2. **User Interface Agent**
-   - Natural language request processing
-   - Requirement clarification
-   - Progress updates
-
-3. **Data Discovery Agent**
-   - Database exploration
-   - Schema analysis
-   - Relationship mapping
-
-4. **Visualization Engine Agent**
-   - Dynamic visualization generation
-   - Multiple library support
-   - Interactive dashboard creation
-
-5. **Report Generation Agent**
-   - Template management
-   - Multiple output formats
-   - Email delivery
+- Multi-agent architecture for intelligent report generation
+- Support for multiple database types (SQL Server, MySQL, PostgreSQL, SQLite)
+- Dynamic data analysis and visualization
+- Natural language query processing
+- Automated insight generation
+- Interactive report generation
+- Configurable agent behaviors
 
 ## Installation
 
 1. Clone the repository:
 ```bash
-git clone https://github.com/yourusername/autogen-reporting-system.git
-cd autogen-reporting-system
+git clone https://github.com/janlr/ReportAgentNewSQL.git
+cd ReportAgentNewSQL
 ```
 
-2. Create a virtual environment:
-```bash
-python -m venv venv
-source venv/bin/activate  # On Windows: venv\Scripts\activate
-```
-
-3. Install dependencies:
+2. Install dependencies:
 ```bash
 pip install -r requirements.txt
 ```
 
-4. Set up environment variables:
+3. Set up environment variables:
 ```bash
 cp .env.example .env
 # Edit .env with your configuration
@@ -68,126 +33,55 @@ cp .env.example .env
 
 ## Usage
 
-### Basic Report Generation
-
-```python
-from agents.orchestrator import ReportingOrchestrator
-
-# Initialize the orchestrator
-orchestrator = ReportingOrchestrator()
-
-# Process a report request
-result = orchestrator.process_request(
-    "Generate a sales report for Q4 2023 with trend analysis"
-)
+1. Configure your database connection in `.env`:
 ```
-
-### Custom Visualization
-
-```python
-from agents.visualization import VisualizationAgent
-import pandas as pd
-
-# Initialize the visualization agent
-viz_agent = VisualizationAgent()
-
-# Create a visualization
-viz = viz_agent.create_visualization(
-    data=your_dataframe,
-    viz_type="line",
-    config={
-        "x": "date",
-        "y": "sales",
-        "color": "region",
-        "title": "Sales Trends by Region"
-    }
-)
-
-# Save the visualization
-viz_agent.save_visualization(viz, "sales_trend")
-```
-
-### Interactive Dashboard
-
-```python
-from agents.report_generator import ReportGeneratorAgent
-
-# Initialize the report generator
-report_agent = ReportGeneratorAgent()
-
-# Create an interactive dashboard
-report_agent.create_streamlit_dashboard(
-    title="Sales Dashboard",
-    data=your_data,
-    visualizations=your_visualizations,
-    insights=your_insights
-)
-```
-
-## Configuration
-
-### Database Connection
-
-Edit `.env` file:
-```env
-DB_HOST=localhost
-DB_PORT=3306
+DB_TYPE=mssql
+DB_HOST=your_host
 DB_NAME=your_database
-DB_USER=your_username
+DB_USER=your_user
 DB_PASSWORD=your_password
 ```
 
-### Report Templates
-
-Place your report templates in the `templates` directory:
-```
-templates/
-├── report_template.html
-├── email_template.html
-└── dashboard_template.html
-```
-
-## Development
-
-### Running Tests
-
+2. Run the application:
 ```bash
-pytest tests/
+streamlit run app.py
 ```
 
-### Type Checking
+## Project Structure
 
-```bash
-mypy agents/
 ```
-
-### Code Formatting
-
-```bash
-black agents/
+ReportAgentNewSQL/
+├── agents/                 # Agent implementations
+│   ├── __init__.py
+│   ├── base_agent.py
+│   ├── master_orchestrator_agent.py
+│   ├── database_agent.py
+│   ├── data_manager_agent.py
+│   ├── user_interface_agent.py
+│   ├── report_generator_agent.py
+│   ├── insight_generator_agent.py
+│   ├── assistant_agent.py
+│   └── llm_manager_agent.py
+├── app.py                 # Main application entry point
+├── requirements.txt       # Project dependencies
+├── .env.example          # Example environment variables
+└── README.md             # Project documentation
 ```
 
 ## Contributing
 
 1. Fork the repository
-2. Create a feature branch
-3. Commit your changes
-4. Push to the branch
-5. Create a Pull Request
+2. Create your feature branch (`git checkout -b feature/amazing-feature`)
+3. Commit your changes (`git commit -m 'Add some amazing feature'`)
+4. Push to the branch (`git push origin feature/amazing-feature`)
+5. Open a Pull Request
 
 ## License
 
-This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
+This project is licensed under the MIT License - see the LICENSE file for details.
 
 ## Acknowledgments
 
-- AutoGen framework developers
-- Contributors to the various visualization libraries
-- The open-source community
-
-## Support
-
-For support, please:
-1. Check the [documentation](docs/)
-2. Open an issue
-3. Contact the maintainers 
+- Built with [AutoGen](https://github.com/microsoft/autogen)
+- Powered by OpenAI and Anthropic LLMs
+- Uses Streamlit for the user interface 

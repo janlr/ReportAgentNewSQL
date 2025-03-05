@@ -6,14 +6,18 @@ from pathlib import Path
 import hashlib
 from datetime import datetime
 import sqlite3
+import numpy as np
 from .base_agent import BaseAgent
 
 class DataManagerAgent(BaseAgent):
-    """Agent responsible for data operations and favorites management."""
+    """Agent responsible for data cleaning, transformation, and management."""
     
     def __init__(self, config: Dict[str, Any]):
-        super().__init__("data_manager_agent")
-        self.config = config
+        """Initialize with configuration."""
+        super().__init__(config)
+        self.required_config = ["cache_dir", "batch_size", "max_workers"]
+        self.cache_dir = Path(config.get("cache_dir", "./cache/data"))
+        self.cache_dir.mkdir(parents=True, exist_ok=True)
         
         # Set up directories
         self.data_dir = Path(config.get("data_dir", "./data"))
@@ -60,53 +64,172 @@ class DataManagerAgent(BaseAgent):
             conn.commit()
     
     async def initialize(self) -> bool:
-        """Initialize the data manager."""
+        """Initialize the data manager agent."""
+        if not self.validate_config(self.required_config):
+            return False
+            
+        # Create cache directory if it doesn't exist
+        self.cache_dir.mkdir(parents=True, exist_ok=True)
+        return True
+    
+    async def cleanup(self) -> bool:
+        """Clean up data manager resources."""
         try:
-            self.logger.info("Initializing data manager")
+            # Clean up any resources
+            self.logger.info("Data manager agent cleaned up successfully")
             return True
         except Exception as e:
-            self.logger.error(f"Error initializing data manager: {str(e)}")
+            self.logger.error(f"Error cleaning up data manager agent: {str(e)}")
             return False
     
-    async def process(self, input_data: Dict[str, Any]) -> Dict[str, Any]:
-        """Process data management requests."""
-        action = input_data.get("action")
-        
-        if not action:
-            raise ValueError("Action not specified in input data")
-        
+    async def process(self, request: Dict[str, Any]) -> Dict[str, Any]:
+        """Process data-related requests."""
         try:
-            if action == "import_excel":
-                file_path = input_data.get("file_path")
-                sheet_name = input_data.get("sheet_name")
+            action = request.get("action")
+            if not action:
+                return {"success": False, "error": "No action specified"}
+            
+            if action == "get_schema_info":
+                return await self._get_schema_info()
+            elif action == "execute_query":
+                return await self._execute_query(request.get("parameters", {}))
+            elif action == "get_product_categories":
+                return await self._get_product_categories()
+            elif action == "get_warehouse_locations":
+                return await self._get_warehouse_locations()
+            elif action == "clean_data":
+                data = request.get("data")
+                if not isinstance(data, pd.DataFrame):
+                    data = pd.DataFrame(data)
+                
+                cleaned_data = self._clean_data(data)
+                return {
+                    "success": True,
+                    "data": cleaned_data
+                }
+                
+            elif action == "transform_data":
+                data = request.get("data")
+                transformations = request.get("transformations", [])
+                
+                if not isinstance(data, pd.DataFrame):
+                    data = pd.DataFrame(data)
+                
+                transformed_data = self._apply_transformations(data, transformations)
+                return {
+                    "success": True,
+                    "data": transformed_data
+                }
+            
+            elif action == "import_excel":
+                file_path = request.get("file_path")
+                sheet_name = request.get("sheet_name")
                 return await self._import_excel(file_path, sheet_name)
             
             elif action == "add_favorite":
-                return await self._add_favorite(input_data)
+                return await self._add_favorite(request)
             
             elif action == "get_favorite":
-                favorite_id = input_data.get("favorite_id")
+                favorite_id = request.get("favorite_id")
                 return await self._get_favorite(favorite_id)
             
             elif action == "list_favorites":
-                report_type = input_data.get("report_type")
-                tags = input_data.get("tags")
+                report_type = request.get("report_type")
+                tags = request.get("tags")
                 return await self._list_favorites(report_type, tags)
             
             elif action == "delete_favorite":
-                favorite_id = input_data.get("favorite_id")
+                favorite_id = request.get("favorite_id")
                 return await self._delete_favorite(favorite_id)
             
             else:
-                raise ValueError(f"Unknown action: {action}")
+                return {"success": False, "error": f"Unknown action: {action}"}
                 
         except Exception as e:
             self.logger.error(f"Error processing data request: {str(e)}")
-            raise
+            return {"success": False, "error": str(e)}
     
-    async def cleanup(self):
-        """Clean up data manager resources."""
-        self.logger.info("Cleaning up data manager resources")
+    def _clean_data(self, df: pd.DataFrame) -> pd.DataFrame:
+        """Clean and preprocess data."""
+        try:
+            # Create a copy to avoid modifying the original
+            cleaned = df.copy()
+            
+            # Remove duplicate rows
+            cleaned = cleaned.drop_duplicates()
+            
+            # Handle missing values
+            for column in cleaned.columns:
+                if cleaned[column].dtype in [np.float64, np.int64]:
+                    # Fill numeric missing values with median
+                    cleaned[column] = cleaned[column].fillna(cleaned[column].median())
+                else:
+                    # Fill categorical missing values with mode
+                    cleaned[column] = cleaned[column].fillna(cleaned[column].mode()[0] if not cleaned[column].mode().empty else "Unknown")
+            
+            # Convert date columns
+            date_columns = cleaned.select_dtypes(include=['datetime64']).columns
+            for column in date_columns:
+                cleaned[column] = pd.to_datetime(cleaned[column], errors='coerce')
+            
+            # Handle outliers in numeric columns
+            numeric_columns = cleaned.select_dtypes(include=[np.number]).columns
+            for column in numeric_columns:
+                Q1 = cleaned[column].quantile(0.25)
+                Q3 = cleaned[column].quantile(0.75)
+                IQR = Q3 - Q1
+                lower_bound = Q1 - 1.5 * IQR
+                upper_bound = Q3 + 1.5 * IQR
+                cleaned[column] = cleaned[column].clip(lower=lower_bound, upper=upper_bound)
+            
+            return cleaned
+            
+        except Exception as e:
+            self.logger.error(f"Error cleaning data: {str(e)}")
+            return df
+    
+    def _apply_transformations(self, df: pd.DataFrame, transformations: List[Dict[str, Any]]) -> pd.DataFrame:
+        """Apply a series of transformations to the data."""
+        try:
+            transformed = df.copy()
+            
+            for transform in transformations:
+                transform_type = transform.get("type")
+                params = transform.get("parameters", {})
+                
+                if transform_type == "rename_columns":
+                    transformed = transformed.rename(columns=params.get("mapping", {}))
+                
+                elif transform_type == "drop_columns":
+                    columns = params.get("columns", [])
+                    transformed = transformed.drop(columns=columns, errors='ignore')
+                
+                elif transform_type == "filter_rows":
+                    condition = params.get("condition")
+                    if condition:
+                        transformed = transformed.query(condition)
+                
+                elif transform_type == "aggregate":
+                    group_by = params.get("group_by", [])
+                    agg_funcs = params.get("aggregations", {})
+                    transformed = transformed.groupby(group_by).agg(agg_funcs).reset_index()
+                
+                elif transform_type == "sort":
+                    by = params.get("by", [])
+                    ascending = params.get("ascending", True)
+                    transformed = transformed.sort_values(by=by, ascending=ascending)
+                
+                elif transform_type == "create_column":
+                    column_name = params.get("name")
+                    expression = params.get("expression")
+                    if column_name and expression:
+                        transformed[column_name] = transformed.eval(expression)
+            
+            return transformed
+            
+        except Exception as e:
+            self.logger.error(f"Error applying transformations: {str(e)}")
+            return df
     
     async def _import_excel(self, file_path: str, sheet_name: Optional[str] = None) -> Dict[str, Any]:
         """Import data from an Excel file."""
@@ -356,4 +479,38 @@ class DataManagerAgent(BaseAgent):
             name.lower().replace(" ", "_"),
             datetime.now().strftime("%Y%m%d%H%M%S")
         ]
-        return hashlib.md5("_".join(components).encode()).hexdigest()[:12] 
+        return hashlib.md5("_".join(components).encode()).hexdigest()[:12]
+    
+    async def _get_schema_info(self) -> Dict[str, Any]:
+        """Get database schema information."""
+        # TODO: Implement actual schema retrieval
+        return {
+            "success": True,
+            "data": {
+                "tables": {}
+            }
+        }
+    
+    async def _execute_query(self, parameters: Dict[str, Any]) -> Dict[str, Any]:
+        """Execute a database query."""
+        # TODO: Implement actual query execution
+        return {
+            "success": True,
+            "data": pd.DataFrame()
+        }
+    
+    async def _get_product_categories(self) -> Dict[str, Any]:
+        """Get list of product categories."""
+        # TODO: Implement actual category retrieval
+        return {
+            "success": True,
+            "data": []
+        }
+    
+    async def _get_warehouse_locations(self) -> Dict[str, Any]:
+        """Get list of warehouse locations."""
+        # TODO: Implement actual location retrieval
+        return {
+            "success": True,
+            "data": []
+        } 

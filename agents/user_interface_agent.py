@@ -5,18 +5,17 @@ import logging
 from pathlib import Path
 from datetime import datetime
 from .base_agent import BaseAgent
+import plotly.express as px
+import plotly.graph_objects as go
 
 class UserInterfaceAgent(BaseAgent):
-    """Agent responsible for user interface interactions."""
+    """Agent responsible for user interface interactions and rendering."""
     
     def __init__(self, config: Dict[str, Any]):
-        super().__init__("user_interface_agent")
-        self.config = config
-        
-        # Set up preferences directory
+        """Initialize with configuration."""
+        super().__init__(config)
+        self.required_config = ["preferences_dir"]
         self.preferences_dir = Path(config.get("preferences_dir", "./preferences"))
-        self.preferences_dir.mkdir(parents=True, exist_ok=True)
-        self.preferences_file = self.preferences_dir / "user_preferences.json"
         
         # Initialize session data
         if "session_data" not in st.session_state:
@@ -27,9 +26,9 @@ class UserInterfaceAgent(BaseAgent):
     
     def _load_preferences(self) -> Dict[str, Any]:
         """Load user preferences from file."""
-        if self.preferences_file.exists():
+        if self.preferences_dir.exists():
             try:
-                with open(self.preferences_file, "r") as f:
+                with open(self.preferences_dir / "user_preferences.json", "r") as f:
                     return json.load(f)
             except Exception as e:
                 self.logger.error(f"Error loading preferences: {str(e)}")
@@ -56,239 +55,203 @@ class UserInterfaceAgent(BaseAgent):
     def _save_preferences(self):
         """Save user preferences to file."""
         try:
-            with open(self.preferences_file, "w") as f:
+            with open(self.preferences_dir / "user_preferences.json", "w") as f:
                 json.dump(self.preferences, f, indent=2)
         except Exception as e:
             self.logger.error(f"Error saving preferences: {str(e)}")
     
     async def initialize(self) -> bool:
-        """Initialize the user interface."""
+        """Initialize user interface agent."""
+        if not self.validate_config(self.required_config):
+            return False
+            
+        # Create preferences directory
+        self.preferences_dir.mkdir(parents=True, exist_ok=True)
+        return True
+    
+    async def cleanup(self) -> bool:
+        """Clean up user interface resources."""
         try:
-            self.logger.info("Initializing user interface")
+            # Clean up any resources
+            self._save_preferences()
+            self.logger.info("User interface agent cleaned up successfully")
             return True
         except Exception as e:
-            self.logger.error(f"Error initializing user interface: {str(e)}")
+            self.logger.error(f"Error cleaning up user interface agent: {str(e)}")
             return False
     
-    async def process(self, input_data: Dict[str, Any]) -> Dict[str, Any]:
+    async def process(self, request: Dict[str, Any]) -> Dict[str, Any]:
         """Process user interface requests."""
-        action = input_data.get("action")
-        
-        if not action:
-            raise ValueError("Action not specified in input data")
-        
         try:
-            if action == "render_page":
-                page = input_data.get("page")
-                components = input_data.get("components", [])
-                return await self._render_page(page, components)
+            action = request.get("action")
+            if not action:
+                return {"success": False, "error": "No action specified"}
+            
+            if action == "get_preferences":
+                return await self._get_preferences()
+            elif action == "save_preferences":
+                return await self._save_preferences(request.get("parameters", {}))
+            elif action == "render_page":
+                page = request.get("page")
+                components = request.get("components", [])
+                
+                if not page:
+                    raise ValueError("Page title is required for render_page action")
+                
+                rendered_page = self._render_page(page, components)
+                return {
+                    "success": True,
+                    "data": rendered_page
+                }
+                
+            elif action == "create_visualization":
+                data = request.get("data")
+                viz_type = request.get("viz_type")
+                parameters = request.get("parameters", {})
+                
+                if not data or not viz_type:
+                    raise ValueError("Data and visualization type are required")
+                
+                visualization = self._create_visualization(data, viz_type, parameters)
+                return {
+                    "success": True,
+                    "data": visualization
+                }
             
             elif action == "handle_input":
-                input_type = input_data.get("type")
-                key = input_data.get("key")
-                value = input_data.get("value")
+                input_type = request.get("type")
+                key = request.get("key")
+                value = request.get("value")
                 return await self._handle_input(input_type, key, value)
             
             elif action == "update_preferences":
-                preferences = input_data.get("preferences")
+                preferences = request.get("preferences")
                 return await self._update_preferences(preferences)
             
             elif action == "get_session_data":
-                key = input_data.get("key")
+                key = request.get("key")
                 return await self._get_session_data(key)
             
             else:
-                raise ValueError(f"Unknown action: {action}")
+                return {"success": False, "error": f"Unknown action: {action}"}
                 
         except Exception as e:
             self.logger.error(f"Error processing UI request: {str(e)}")
-            raise
+            return {"success": False, "error": str(e)}
     
-    async def cleanup(self):
-        """Clean up user interface resources."""
-        self._save_preferences()
-        self.logger.info("Cleaned up user interface resources")
-    
-    async def _render_page(self, page: str, components: List[Dict[str, Any]]) -> Dict[str, Any]:
-        """Render a page with specified components."""
+    def _render_page(self, page_title: str, components: List[Dict[str, Any]]) -> Dict[str, Any]:
+        """Render a page with the given components."""
         try:
-            # Set page configuration
-            st.set_page_config(
-                page_title=f"Report Agent - {page}",
-                page_icon="📊",
-                layout="wide",
-                initial_sidebar_state="expanded"
-            )
+            st.title(page_title)
             
-            # Render components
             rendered_components = []
-            for comp in components:
-                comp_type = comp.get("type")
+            for component in components:
+                comp_type = component.get("type")
                 
                 if comp_type == "header":
-                    st.header(comp.get("text", ""))
-                    rendered_components.append({"type": "header", "status": "success"})
+                    st.header(component.get("text", ""))
+                    rendered_components.append({"type": "header", "id": id(component)})
+                
+                elif comp_type == "subheader":
+                    st.subheader(component.get("text", ""))
+                    rendered_components.append({"type": "subheader", "id": id(component)})
                 
                 elif comp_type == "text":
-                    st.text(comp.get("text", ""))
-                    rendered_components.append({"type": "text", "status": "success"})
+                    st.text(component.get("text", ""))
+                    rendered_components.append({"type": "text", "id": id(component)})
                 
                 elif comp_type == "markdown":
-                    st.markdown(comp.get("text", ""))
-                    rendered_components.append({"type": "markdown", "status": "success"})
-                
-                elif comp_type == "input":
-                    value = st.text_input(
-                        label=comp.get("label", ""),
-                        value=comp.get("default", ""),
-                        key=comp.get("key")
-                    )
-                    rendered_components.append({
-                        "type": "input",
-                        "key": comp.get("key"),
-                        "value": value,
-                        "status": "success"
-                    })
-                
-                elif comp_type == "number":
-                    value = st.number_input(
-                        label=comp.get("label", ""),
-                        min_value=comp.get("min"),
-                        max_value=comp.get("max"),
-                        value=comp.get("default"),
-                        key=comp.get("key")
-                    )
-                    rendered_components.append({
-                        "type": "number",
-                        "key": comp.get("key"),
-                        "value": value,
-                        "status": "success"
-                    })
-                
-                elif comp_type == "date":
-                    value = st.date_input(
-                        label=comp.get("label", ""),
-                        value=comp.get("default"),
-                        key=comp.get("key")
-                    )
-                    rendered_components.append({
-                        "type": "date",
-                        "key": comp.get("key"),
-                        "value": value.isoformat() if value else None,
-                        "status": "success"
-                    })
-                
-                elif comp_type == "select":
-                    value = st.selectbox(
-                        label=comp.get("label", ""),
-                        options=comp.get("options", []),
-                        index=comp.get("default_index", 0),
-                        key=comp.get("key")
-                    )
-                    rendered_components.append({
-                        "type": "select",
-                        "key": comp.get("key"),
-                        "value": value,
-                        "status": "success"
-                    })
-                
-                elif comp_type == "multiselect":
-                    value = st.multiselect(
-                        label=comp.get("label", ""),
-                        options=comp.get("options", []),
-                        default=comp.get("default", []),
-                        key=comp.get("key")
-                    )
-                    rendered_components.append({
-                        "type": "multiselect",
-                        "key": comp.get("key"),
-                        "value": value,
-                        "status": "success"
-                    })
-                
-                elif comp_type == "checkbox":
-                    value = st.checkbox(
-                        label=comp.get("label", ""),
-                        value=comp.get("default", False),
-                        key=comp.get("key"),
-                        help=comp.get("help")
-                    )
-                    rendered_components.append({
-                        "type": "checkbox",
-                        "key": comp.get("key"),
-                        "value": value,
-                        "status": "success"
-                    })
-                
-                elif comp_type == "button":
-                    if st.button(
-                        label=comp.get("label", ""),
-                        key=comp.get("key")
-                    ):
-                        rendered_components.append({
-                            "type": "button",
-                            "key": comp.get("key"),
-                            "clicked": True,
-                            "status": "success"
-                        })
-                    else:
-                        rendered_components.append({
-                            "type": "button",
-                            "key": comp.get("key"),
-                            "clicked": False,
-                            "status": "success"
-                        })
-                
-                elif comp_type == "plotly":
-                    st.plotly_chart(
-                        comp.get("figure"),
-                        use_container_width=comp.get("use_container_width", True)
-                    )
-                    rendered_components.append({"type": "plotly", "status": "success"})
+                    st.markdown(component.get("text", ""))
+                    rendered_components.append({"type": "markdown", "id": id(component)})
                 
                 elif comp_type == "dataframe":
-                    st.dataframe(
-                        comp.get("data"),
-                        use_container_width=comp.get("use_container_width", True)
-                    )
-                    rendered_components.append({"type": "dataframe", "status": "success"})
+                    st.dataframe(component.get("data"))
+                    rendered_components.append({"type": "dataframe", "id": id(component)})
                 
-                elif comp_type == "error":
-                    st.error(comp.get("text", ""))
-                    rendered_components.append({"type": "error", "status": "success"})
+                elif comp_type == "chart":
+                    st.plotly_chart(component.get("figure"))
+                    rendered_components.append({"type": "chart", "id": id(component)})
                 
-                elif comp_type == "success":
-                    st.success(comp.get("text", ""))
-                    rendered_components.append({"type": "success", "status": "success"})
-                
-                elif comp_type == "info":
-                    st.info(comp.get("text", ""))
-                    rendered_components.append({"type": "info", "status": "success"})
-                
-                elif comp_type == "warning":
-                    st.warning(comp.get("text", ""))
-                    rendered_components.append({"type": "warning", "status": "success"})
-                
-                else:
-                    self.logger.warning(f"Unknown component type: {comp_type}")
-                    rendered_components.append({
-                        "type": comp_type,
-                        "status": "error",
-                        "message": "Unknown component type"
-                    })
-            
-            # Log page view
-            self.logger.info(f"Rendered page: {page}")
+                elif comp_type == "metrics":
+                    cols = st.columns(len(component.get("metrics", [])))
+                    for col, metric in zip(cols, component.get("metrics", [])):
+                        with col:
+                            st.metric(
+                                label=metric.get("label", ""),
+                                value=metric.get("value", ""),
+                                delta=metric.get("delta")
+                            )
+                    rendered_components.append({"type": "metrics", "id": id(component)})
             
             return {
-                "page": page,
+                "page_title": page_title,
                 "components": rendered_components,
                 "timestamp": datetime.now().isoformat()
             }
             
         except Exception as e:
             self.logger.error(f"Error rendering page: {str(e)}")
-            raise
+            return {}
+    
+    def _create_visualization(self, data: Dict[str, Any], viz_type: str, parameters: Dict[str, Any]) -> go.Figure:
+        """Create a visualization based on the specified type and parameters."""
+        try:
+            if viz_type == "line":
+                fig = px.line(
+                    data,
+                    x=parameters.get("x"),
+                    y=parameters.get("y"),
+                    title=parameters.get("title", ""),
+                    labels=parameters.get("labels", {}),
+                    color=parameters.get("color"),
+                    line_dash=parameters.get("line_dash"),
+                    markers=parameters.get("markers", True)
+                )
+            
+            elif viz_type == "bar":
+                fig = px.bar(
+                    data,
+                    x=parameters.get("x"),
+                    y=parameters.get("y"),
+                    title=parameters.get("title", ""),
+                    labels=parameters.get("labels", {}),
+                    color=parameters.get("color"),
+                    barmode=parameters.get("barmode", "group")
+                )
+            
+            elif viz_type == "scatter":
+                fig = px.scatter(
+                    data,
+                    x=parameters.get("x"),
+                    y=parameters.get("y"),
+                    title=parameters.get("title", ""),
+                    labels=parameters.get("labels", {}),
+                    color=parameters.get("color"),
+                    size=parameters.get("size"),
+                    hover_data=parameters.get("hover_data", [])
+                )
+            
+            elif viz_type == "pie":
+                fig = px.pie(
+                    data,
+                    values=parameters.get("values"),
+                    names=parameters.get("names"),
+                    title=parameters.get("title", ""),
+                    hole=parameters.get("hole", 0)
+                )
+            
+            else:
+                raise ValueError(f"Unsupported visualization type: {viz_type}")
+            
+            # Update layout based on parameters
+            layout_updates = parameters.get("layout", {})
+            fig.update_layout(**layout_updates)
+            
+            return fig
+            
+        except Exception as e:
+            self.logger.error(f"Error creating visualization: {str(e)}")
+            return go.Figure()
     
     async def _handle_input(self, input_type: str, key: str, value: Any) -> Dict[str, Any]:
         """Handle user input and store in session data."""
@@ -352,4 +315,20 @@ class UserInterfaceAgent(BaseAgent):
                 
         except Exception as e:
             self.logger.error(f"Error getting session data: {str(e)}")
-            raise 
+            raise
+    
+    async def _get_preferences(self) -> Dict[str, Any]:
+        """Get user preferences."""
+        # TODO: Implement actual preferences retrieval
+        return {
+            "success": True,
+            "data": {}
+        }
+    
+    async def _save_preferences(self, preferences: Dict[str, Any]) -> Dict[str, Any]:
+        """Save user preferences."""
+        # TODO: Implement actual preferences saving
+        return {
+            "success": True,
+            "data": preferences
+        } 

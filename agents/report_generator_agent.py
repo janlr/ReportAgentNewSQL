@@ -1,521 +1,601 @@
-from typing import Dict, Any, List, Optional, Union, Tuple
 import pandas as pd
+import plotly.express as px
+import plotly.graph_objects as go
 import json
-import logging
-from pathlib import Path
-import hashlib
 from datetime import datetime
-import inspect
-import ast
-import re
-from dataclasses import dataclass
+from typing import Dict, Any, List, Optional, Union
+import openai
+from pathlib import Path
+from sqlalchemy import create_engine
 from .base_agent import BaseAgent
+from autogen import UserProxyAgent, AssistantAgent
+from .data_manager_agent import DataManagerAgent
+from .insight_generator_agent import InsightGeneratorAgent
+from .llm_manager_agent import LLMManagerAgent
 
-@dataclass
-class ReportTemplate:
-    """Data class for report template metadata."""
-    id: str
-    name: str
-    description: str
-    category: str
-    tags: List[str]
-    parameters: Dict[str, Any]
-    version: int = 1
-    created_at: str = None
-    updated_at: str = None
-    usage_count: int = 0
-    previous_versions: List[str] = None
-    client_name: str = "default"  # Added client name field
-    joins: List[Dict[str, str]] = None  # Added joins field
-    group_by: List[str] = None  # Added group by field
-    having: Dict[str, str] = None  # Added having conditions
-    order_by: List[Dict[str, str]] = None  # Added order by field
+# Import specific agents
+from agents import MasterOrchestratorAgent
+
+# Import all agents
+from agents import *
+
+# Import the package
+import agents
 
 class ReportGeneratorAgent(BaseAgent):
-    """Agent responsible for managing report templates and generation."""
+    """Agent responsible for generating reports."""
     
     def __init__(self, config: Dict[str, Any]):
         """Initialize with configuration."""
-        super().__init__("report_generator_agent")
-        self.config = config
-        self.client_configs = config.get("client_configs", {})
-        self.current_client = config.get("default_client", "default")
+        super().__init__(config)
+        self.required_config = ["template_dir", "output_dir"]
+        self.template_dir = Path(config.get("template_dir", "./templates"))
+        self.output_dir = Path(config.get("output_dir", "./reports"))
         
-        # Set up directories
-        self.base_dir = Path(config.get("reports_dir", "./reports"))
-        self.templates_dir = self.base_dir / "templates"
-        self.versions_dir = self.base_dir / "versions"
-        self.output_dir = self.base_dir / "output"
-        self.client_config_dir = self.base_dir / "client_configs"
+        # Initialize the agent system
+        self.analyst_agent = AssistantAgent(
+            name="analyst",
+            system_message="You are an expert data analyst. You analyze data and generate insights.",
+            llm_config={"temperature": 0.7}
+        )
         
-        for directory in [self.base_dir, self.templates_dir, self.versions_dir, 
-                         self.output_dir, self.client_config_dir]:
-            directory.mkdir(parents=True, exist_ok=True)
-    
-        self.load_client_configs()
-    
-    def load_client_configs(self) -> None:
-        """Load client configurations from files."""
-        try:
-            # Load built-in configs
-            self.client_configs.update(self.config.get("CLIENT_CONFIGS", {}))
-            
-            # Load custom client configs from files
-            for config_file in self.client_config_dir.glob("*.json"):
-                with open(config_file, 'r') as f:
-                    client_name = config_file.stem
-                    self.client_configs[client_name] = json.load(f)
-                    
-            self.logger.info(f"Loaded configurations for clients: {list(self.client_configs.keys())}")
-        except Exception as e:
-            self.logger.error(f"Error loading client configs: {str(e)}")
-    
-    def validate_client_config(self, config: Dict[str, Any]) -> bool:
-        """Validate client configuration structure."""
-        required_keys = ["report_categories", "metrics_mapping", "table_mapping", "field_mapping"]
-        if not all(key in config for key in required_keys):
-            return False
-            
-        # Validate metrics mapping structure
-        if not isinstance(config["metrics_mapping"], dict):
-            return False
+        self.visualization_agent = AssistantAgent(
+            name="visualizer",
+            system_message="You are an expert in data visualization. You create effective and informative visualizations.",
+            llm_config={"temperature": 0.4}
+        )
         
-        # Validate table mapping
-        if not isinstance(config["table_mapping"], dict):
+        self.insight_agent = AssistantAgent(
+            name="insight_generator",
+            system_message="You are an expert in interpreting data analysis and generating business insights.",
+            llm_config={"temperature": 0.7}
+        )
+        
+        self.coordinator = UserProxyAgent(
+            name="coordinator",
+            system_message="You coordinate the report generation process between different agents.",
+            human_input_mode="NEVER"
+        )
+        
+    async def initialize(self) -> bool:
+        """Initialize the report generator agent."""
+        if not self.validate_config(self.required_config):
             return False
             
-        # Validate field mapping
-        if not isinstance(config["field_mapping"], dict):
-            return False
-            
+        # Create necessary directories
+        self.template_dir.mkdir(parents=True, exist_ok=True)
+        self.output_dir.mkdir(parents=True, exist_ok=True)
         return True
     
-    def add_client_config(self, client_name: str, config: Dict[str, Any]) -> bool:
-        """Add a new client configuration."""
+    async def process(self, request: Dict[str, Any]) -> Dict[str, Any]:
+        """Process report generation requests."""
         try:
-            if not self.validate_client_config(config):
-                raise ValueError("Invalid client configuration structure")
-                
-            # Save to file
-            config_path = self.client_config_dir / f"{client_name}.json"
-            with open(config_path, 'w') as f:
-                json.dump(config, f, indent=4)
-                
-            # Update in memory
-            self.client_configs[client_name] = config
-            self.logger.info(f"Added configuration for client: {client_name}")
-            return True
-        except Exception as e:
-            self.logger.error(f"Error adding client config: {str(e)}")
-            return False
-    
-    def get_client_metrics(self, category: str) -> Dict[str, str]:
-        """Get metrics mapping for current client and category."""
-        client_config = self.client_configs.get(self.current_client, {})
-        return client_config.get("metrics_mapping", {}).get(category, {})
-    
-    def get_table_mapping(self, table_name: str) -> str:
-        """Get actual table name for current client."""
-        client_config = self.client_configs.get(self.current_client, {})
-        return client_config.get("table_mapping", {}).get(table_name, table_name)
-    
-    def get_field_mapping(self, field_name: str) -> str:
-        """Get actual field name for current client."""
-        client_config = self.client_configs.get(self.current_client, {})
-        return client_config.get("field_mapping", {}).get(field_name, field_name)
-    
-    def generate_query(self, template: ReportTemplate) -> str:
-        """Generate SQL query based on template and client configuration."""
-        try:
-            client_config = self.client_configs.get(template.client_name, 
-                                                  self.client_configs["default"])
-            
-            # Get metrics for the template category
-            metrics = client_config["metrics_mapping"].get(template.category, {})
-            
-            # Build SELECT clause
-            select_clause = []
-            for metric_name, metric_expr in metrics.items():
-                if metric_name in template.parameters.get("metrics", []):
-                    select_clause.append(f"{metric_expr} as {metric_name}")
-            
-            # Add dimensions to SELECT clause
-            dimensions = template.parameters.get("dimensions", [])
-            for dim in dimensions:
-                mapped_field = self.get_field_mapping(dim)
-                select_clause.append(f"{mapped_field} as {dim}")
-            
-            # Build FROM clause with proper table names and JOINs
-            from_table = self.get_table_mapping(template.parameters.get("main_table", ""))
-            join_clauses = []
-            
-            if template.joins:
-                for join in template.joins:
-                    join_type = join.get("type", "INNER")
-                    from_table_field = self.get_field_mapping(join["from_field"])
-                    join_table = self.get_table_mapping(join["table"])
-                    join_field = self.get_field_mapping(join["join_field"])
-                    join_clauses.append(
-                        f"{join_type} JOIN {join_table} ON "
-                        f"{from_table}.{from_table_field} = {join_table}.{join_field}"
-                    )
-            
-            # Build WHERE clause with mapped field names
-            where_conditions = []
-            for field, value in template.parameters.get("filters", {}).items():
-                mapped_field = self.get_field_mapping(field)
-                if isinstance(value, (int, float)):
-                    where_conditions.append(f"{mapped_field} = {value}")
-                else:
-                    where_conditions.append(f"{mapped_field} = '{value}'")
-            
-            # Build GROUP BY clause
-            group_by_clause = ""
-            if template.group_by:
-                group_fields = [self.get_field_mapping(f) for f in template.group_by]
-                group_by_clause = f"GROUP BY {', '.join(group_fields)}"
-            
-            # Build HAVING clause
-            having_clause = ""
-            if template.having:
-                having_conditions = []
-                for field, condition in template.having.items():
-                    mapped_field = self.get_field_mapping(field)
-                    having_conditions.append(f"{mapped_field} {condition}")
-                having_clause = f"HAVING {' AND '.join(having_conditions)}"
-            
-            # Build ORDER BY clause
-            order_by_clause = ""
-            if template.order_by:
-                order_terms = []
-                for order in template.order_by:
-                    field = self.get_field_mapping(order["field"])
-                    direction = order.get("direction", "ASC")
-                    order_terms.append(f"{field} {direction}")
-                order_by_clause = f"ORDER BY {', '.join(order_terms)}"
-            
-            # Construct final query
-            query_parts = [
-                f"SELECT {', '.join(select_clause)}",
-                f"FROM {from_table}"
-            ]
-            
-            if join_clauses:
-                query_parts.extend(join_clauses)
-            
-            if where_conditions:
-                query_parts.append(f"WHERE {' AND '.join(where_conditions)}")
-            
-            if group_by_clause:
-                query_parts.append(group_by_clause)
-            
-            if having_clause:
-                query_parts.append(having_clause)
-            
-            if order_by_clause:
-                query_parts.append(order_by_clause)
-            
-            return " ".join(query_parts)
-            
-        except Exception as e:
-            self.logger.error(f"Error generating query: {str(e)}")
-            return ""
-    
-    def export_client_config(self, client_name: str, output_path: Optional[Path] = None) -> bool:
-        """Export client configuration to a file."""
-        try:
-            if client_name not in self.client_configs:
-                raise ValueError(f"Client configuration not found: {client_name}")
-            
-            config = self.client_configs[client_name]
-            
-            if output_path is None:
-                output_path = self.client_config_dir / f"{client_name}_export.json"
-            
-            with open(output_path, 'w') as f:
-                json.dump(config, f, indent=4)
-            
-            self.logger.info(f"Exported configuration for client {client_name} to {output_path}")
-            return True
-            
-        except Exception as e:
-            self.logger.error(f"Error exporting client config: {str(e)}")
-            return False
-    
-    def import_client_config(self, config_path: Union[str, Path], client_name: Optional[str] = None) -> bool:
-        """Import client configuration from a file."""
-        try:
-            config_path = Path(config_path)
-            if not config_path.exists():
-                raise ValueError(f"Configuration file not found: {config_path}")
-            
-            with open(config_path, 'r') as f:
-                config = json.load(f)
-            
-            if not self.validate_client_config(config):
-                raise ValueError("Invalid client configuration structure")
-            
-            if client_name is None:
-                client_name = config_path.stem
-            
-            return self.add_client_config(client_name, config)
-            
-        except Exception as e:
-            self.logger.error(f"Error importing client config: {str(e)}")
-            return False
-    
-    def parse_user_prompt(self, prompt: str) -> Dict[str, Any]:
-        """Parse natural language prompt into report parameters."""
-        try:
-            # Extract time-related phrases
-            time_patterns = {
-                'last_n_days': r'last (\d+) days',
-                'last_n_months': r'last (\d+) months',
-                'date_range': r'between (\d{4}-\d{2}-\d{2}) and (\d{4}-\d{2}-\d{2})',
-                'year': r'(in|for) (\d{4})',
-                'month': r'(in|for) (January|February|March|April|May|June|July|August|September|October|November|December)'
-            }
-            
-            time_filters = {}
-            for key, pattern in time_patterns.items():
-                matches = re.findall(pattern, prompt.lower())
-                if matches:
-                    time_filters[key] = matches[0]
-            
-            # Extract metrics
-            metric_patterns = {
-                'sales': r'(total |)(sales|revenue)',
-                'orders': r'(number of |total |)(orders|transactions)',
-                'customers': r'(unique |distinct |)(customers|clients)',
-                'average': r'average (order value|purchase|sale)',
-                'growth': r'(growth|increase|decrease)',
-                'comparison': r'compare|versus|vs'
-            }
-            
-            metrics = []
-            for key, pattern in metric_patterns.items():
-                if re.search(pattern, prompt.lower()):
-                    metrics.append(key)
-            
-            # Extract dimensions
-            dimension_patterns = {
-                'product': r'by (product|item)',
-                'category': r'by (category|type)',
-                'region': r'by (region|location|country)',
-                'customer': r'by (customer|client)',
-                'time': r'by (month|quarter|year)'
-            }
-            
-            dimensions = []
-            for key, pattern in dimension_patterns.items():
-                if re.search(pattern, prompt.lower()):
-                    dimensions.append(key)
-            
-            # Extract sorting preferences
-            sort_patterns = {
-                'top': r'top (\d+)',
-                'bottom': r'bottom (\d+)',
-                'sort': r'sort by|order by'
-            }
-            
-            sorting = {}
-            for key, pattern in sort_patterns.items():
-                matches = re.findall(pattern, prompt.lower())
-                if matches:
-                    sorting[key] = matches[0]
-            
-            return {
-                'time_filters': time_filters,
-                'metrics': metrics,
-                'dimensions': dimensions,
-                'sorting': sorting,
-                'original_prompt': prompt
-            }
-        except Exception as e:
-            self.logger.error(f"Error parsing prompt: {str(e)}")
-            return {}
-
-    def optimize_query(self, query: str) -> Tuple[str, List[str]]:
-        """Optimize the generated SQL query."""
-        try:
-            optimizations = []
-            
-            # Add index hints for large tables
-            if 'sales' in query.lower() or 'orders' in query.lower():
-                query = re.sub(
-                    r'FROM\s+([^\s]+)',
-                    r'FROM \1 WITH (INDEX(IX_OrderDate))',
-                    query
-                )
-                optimizations.append("Added index hint for OrderDate")
-            
-            # Add OPTION (RECOMPILE) for complex queries
-            if query.count('JOIN') > 2 or 'GROUP BY' in query:
-                query += " OPTION (RECOMPILE)"
-                optimizations.append("Added RECOMPILE hint for complex query")
-            
-            # Add TOP clause for large result sets
-            if 'ORDER BY' in query and 'TOP' not in query:
-                query = re.sub(
-                    r'SELECT\s+',
-                    'SELECT TOP 10000 ',
-                    query
-                )
-                optimizations.append("Added TOP clause to limit result set")
-            
-            # Add query hints for parallel execution
-            if query.count('JOIN') > 1:
-                query += " OPTION (MAXDOP 4)"
-                optimizations.append("Added parallel execution hint")
-            
-            return query, optimizations
-            
-        except Exception as e:
-            self.logger.error(f"Error optimizing query: {str(e)}")
-            return query, ["Query optimization failed"]
-
-    def create_example_configs(self) -> None:
-        """Create example client configurations."""
-        try:
-            # E-commerce client example
-            ecommerce_config = {
-                "report_categories": ["sales", "inventory", "customer"],
-                "metrics_mapping": {
-                    "sales": {
-                        "total_revenue": "SUM(OrderDetails.UnitPrice * OrderDetails.Quantity)",
-                        "order_count": "COUNT(DISTINCT Orders.OrderID)",
-                        "average_order_value": "AVG(OrderDetails.UnitPrice * OrderDetails.Quantity)",
-                        "growth_rate": """
-                            ((SUM(CASE WHEN YEAR(OrderDate) = YEAR(GETDATE())
-                              THEN OrderDetails.UnitPrice * OrderDetails.Quantity ELSE 0 END) /
-                              NULLIF(SUM(CASE WHEN YEAR(OrderDate) = YEAR(GETDATE()) - 1
-                              THEN OrderDetails.UnitPrice * OrderDetails.Quantity ELSE 0 END), 0) - 1) * 100
-                        """
-                    },
-                    "inventory": {
-                        "stock_level": "SUM(UnitsInStock)",
-                        "reorder_count": "COUNT(CASE WHEN UnitsInStock <= ReorderLevel THEN 1 END)",
-                        "inventory_value": "SUM(UnitsInStock * UnitPrice)"
-                    },
-                    "customer": {
-                        "customer_count": "COUNT(DISTINCT CustomerID)",
-                        "repeat_rate": """
-                            COUNT(CASE WHEN OrderCount > 1 THEN 1 END) * 100.0 / 
-                            COUNT(DISTINCT CustomerID)
-                        """,
-                        "average_lifetime_value": """
-                            SUM(OrderDetails.UnitPrice * OrderDetails.Quantity) / 
-                            COUNT(DISTINCT Orders.CustomerID)
-                        """
-                    }
-                },
-                "table_mapping": {
-                    "orders": "Sales.Orders",
-                    "order_details": "Sales.OrderDetails",
-                    "products": "Production.Products",
-                    "customers": "Sales.Customers",
-                    "categories": "Production.Categories"
-                },
-                "field_mapping": {
-                    "order_date": "OrderDate",
-                    "product_name": "ProductName",
-                    "category_name": "CategoryName",
-                    "customer_id": "CustomerID",
-                    "unit_price": "UnitPrice",
-                    "quantity": "Quantity"
-                }
-            }
-            
-            # Manufacturing client example
-            manufacturing_config = {
-                "report_categories": ["production", "quality", "maintenance"],
-                "metrics_mapping": {
-                    "production": {
-                        "output_quantity": "SUM(ProductionOutput.Quantity)",
-                        "efficiency_rate": "AVG(ActualOutput / PlannedOutput) * 100",
-                        "downtime_hours": "SUM(DATEDIFF(hour, StartTime, EndTime))"
-                    },
-                    "quality": {
-                        "defect_rate": "COUNT(DefectiveItems) * 100.0 / COUNT(TotalItems)",
-                        "first_pass_yield": "SUM(PassedFirstInspection) * 100.0 / COUNT(TotalItems)",
-                        "scrap_cost": "SUM(ScrapQuantity * MaterialCost)"
-                    },
-                    "maintenance": {
-                        "mtbf": "AVG(DATEDIFF(hour, LastFailure, NextFailure))",
-                        "repair_cost": "SUM(MaintenanceCost)",
-                        "preventive_maintenance_ratio": """
-                            COUNT(CASE WHEN MaintenanceType = 'Preventive' THEN 1 END) * 100.0 /
-                            COUNT(MaintenanceType)
-                        """
-                    }
-                },
-                "table_mapping": {
-                    "production_output": "Production.Output",
-                    "quality_control": "Quality.Inspections",
-                    "maintenance_logs": "Maintenance.Logs",
-                    "equipment": "Production.Equipment"
-                },
-                "field_mapping": {
-                    "production_date": "ProductionDate",
-                    "machine_id": "EquipmentID",
-                    "product_code": "ProductCode",
-                    "operator_id": "OperatorID",
-                    "shift": "ShiftCode"
-                }
-            }
-            
-            # Save example configurations
-            self.add_client_config("ecommerce_example", ecommerce_config)
-            self.add_client_config("manufacturing_example", manufacturing_config)
-            
-        except Exception as e:
-            self.logger.error(f"Error creating example configs: {str(e)}")
-
-    async def process(self, data: Dict[str, Any]) -> Dict[str, Any]:
-        """Process report generation request."""
-        try:
-            action = data.get("action", "")
+            action = request.get("action")
+            if not action:
+                return {"success": False, "error": "No action specified"}
             
             if action == "generate_report":
-                if "prompt" in data:
-                    # Handle natural language prompt
-                    parameters = self.parse_user_prompt(data["prompt"])
-                    template = self.create_template_from_parameters(parameters)
-                else:
-                    # Handle direct template-based request
-                    template_id = data.get("template_id")
-                    template = self.load_template(template_id)
+                return await self._generate_report(request.get("parameters", {}))
+            elif action == "generate_report_from_prompt":
+                return await self._generate_report_from_prompt(request.get("parameters", {}))
+            else:
+                return {"success": False, "error": f"Unknown action: {action}"}
                 
-                if template:
-                    query = self.generate_query(template)
-                    optimized_query, optimizations = self.optimize_query(query)
-                    return {
-                        "status": "success",
-                        "query": optimized_query,
-                        "optimizations": optimizations,
-                        "parameters": template.parameters
-                    }
+        except Exception as e:
+            self.logger.error(f"Error processing report request: {str(e)}")
+            return {"success": False, "error": str(e)}
+    
+    async def _generate_report(self, parameters: Dict[str, Any]) -> Dict[str, Any]:
+        """Generate a report based on parameters."""
+        # TODO: Implement actual report generation
+        return {
+            "success": True,
+            "data": {
+                "summary": "Report summary",
+                "charts": [],
+                "insights": [],
+                "data_tables": {},
+                "report_url": ""
+            }
+        }
+    
+    async def _generate_report_from_prompt(self, parameters: Dict[str, Any]) -> Dict[str, Any]:
+        """Generate a report from a natural language prompt."""
+        # TODO: Implement prompt-based report generation
+        return {
+            "success": True,
+            "data": {
+                "summary": "Report summary",
+                "charts": [],
+                "insights": [],
+                "data_tables": {},
+                "report_url": ""
+            }
+        }
+
+    async def cleanup(self) -> bool:
+        """Clean up resources."""
+        try:
+            # Any cleanup needed
+            self.logger.info("Report generator cleaned up successfully")
+            return True
+        except Exception as e:
+            self.logger.error(f"Error cleaning up report generator: {str(e)}")
+            return False
+    
+    async def _gather_report_data(self, parameters: Dict[str, Any]) -> Dict[str, pd.DataFrame]:
+        """Gather data for the report based on parameters."""
+        try:
+            # Get schema mapping from config
+            from . import get_config
+            db_config = get_config('database')
+            schema_mapping = db_config.get('schema_mapping', {}).get('sales', {})
+            column_mapping = schema_mapping.get('column_mapping', {})
             
-            elif action == "add_client_config":
-                client_name = data.get("client_name")
-                config = data.get("config")
-                success = self.add_client_config(client_name, config)
-                return {"status": "success" if success else "error"}
+            # Build query dynamically based on schema mapping
+            def build_query(viz_type: str) -> str:
+                if viz_type == "Sales Trends":
+                    return f"""
+                        SELECT 
+                            CAST({schema_mapping['orders_table']}.{column_mapping['order_date']} AS DATE) as OrderDate,
+                            SUM({schema_mapping['order_details_table']}.{column_mapping['total_amount']}) as TotalSales,
+                            COUNT(DISTINCT {schema_mapping['orders_table']}.{column_mapping['order_id']}) as OrderCount
+                        FROM {schema_mapping['orders_table']}
+                        JOIN {schema_mapping['order_details_table']} 
+                            ON {schema_mapping['orders_table']}.{column_mapping['order_id']} = 
+                               {schema_mapping['order_details_table']}.{column_mapping['order_id']}
+                        WHERE {schema_mapping['orders_table']}.{column_mapping['order_date']} 
+                            BETWEEN @start_date AND @end_date
+                        GROUP BY CAST({schema_mapping['orders_table']}.{column_mapping['order_date']} AS DATE)
+                        ORDER BY OrderDate
+                    """
+                elif viz_type == "Product Performance":
+                    query = """
+                        SELECT TOP (@top_n)
+                            P.Name as ProductName,
+                            SUM(SOD.LineTotal) as Revenue,
+                            SUM(SOD.OrderQty) as UnitsSold,
+                            AVG(SOD.UnitPrice) as AvgPrice
+                        FROM Sales.SalesOrderHeader SOH
+                        JOIN Sales.SalesOrderDetail SOD ON SOH.SalesOrderID = SOD.SalesOrderID
+                        JOIN Production.Product P ON SOD.ProductID = P.ProductID
+                        WHERE SOH.OrderDate BETWEEN @start_date AND @end_date
+                        GROUP BY P.ProductID, P.Name
+                        ORDER BY SUM(SOD.LineTotal) DESC
+                    """
+                elif viz_type == "Customer Segments":
+                    query = """
+                        SELECT 
+                            C.CustomerID,
+                            COUNT(DISTINCT SOH.SalesOrderID) as OrderCount,
+                            AVG(SOH.TotalDue) as AvgOrderValue,
+                            SUM(SOH.TotalDue) as TotalSpent
+                        FROM Sales.Customer C
+                        JOIN Sales.SalesOrderHeader SOH ON C.CustomerID = SOH.CustomerID
+                        WHERE SOH.OrderDate BETWEEN @start_date AND @end_date
+                        GROUP BY C.CustomerID
+                    """
+                elif viz_type == "Geographic Analysis":
+                    query = """
+                        SELECT 
+                            ST.Name as Territory,
+                            ST.CountryRegionCode as Region,
+                            SUM(SOH.TotalDue) as TotalSales,
+                            COUNT(DISTINCT SOH.CustomerID) as CustomerCount,
+                            COUNT(DISTINCT SOH.SalesOrderID) as OrderCount
+                        FROM Sales.SalesTerritory ST
+                        JOIN Sales.SalesOrderHeader SOH ON ST.TerritoryID = SOH.TerritoryID
+                        WHERE SOH.OrderDate BETWEEN @start_date AND @end_date
+                        GROUP BY ST.TerritoryID, ST.Name, ST.CountryRegionCode
+                    """
+                else:
+                    raise ValueError(f"Unsupported visualization type: {viz_type}")
+            
+            # Build the query
+            viz_type = parameters.get("viz_type")
+            query = build_query(viz_type)
+
+            # Execute query
+            engine = create_engine(self._build_connection_string(db_config))
+            with engine.connect() as conn:
+                df = pd.read_sql(query, conn, params=parameters)
+            
+            return {"sales_data": df}
+
+        except Exception as e:
+            self.logger.error(f"Error gathering report data: {str(e)}")
+            raise
+
+    def _build_connection_string(self, config: Dict[str, Any]) -> str:
+        """Build database connection string."""
+        return (
+            f"mssql+pyodbc://{config['user']}:{config['password']}@"
+            f"{config['host']}:{config['port']}/{config['database']}?"
+            f"driver={config['driver']}"
+        )
+
+    async def _generate_charts(self, data_tables: Dict[str, pd.DataFrame], parameters: Dict[str, Any]) -> List[go.Figure]:
+        """Generate charts based on the data and parameters."""
+        try:
+            charts = []
+            report_type = parameters.get("report_type")
+            
+            if report_type == "Sales Analysis":
+                sales_data = data_tables.get("sales_data")
+                if sales_data is not None:
+                    # Sales over time
+                    fig_time = px.line(
+                        sales_data,
+                        x="OrderDate",
+                        y="LineTotal",
+                        title="Sales Over Time"
+                    )
+                    charts.append(fig_time)
+                    
+                    # Sales by category
+                    fig_category = px.bar(
+                        sales_data.groupby("CategoryName")["LineTotal"].sum().reset_index(),
+                        x="CategoryName",
+                        y="LineTotal",
+                        title="Sales by Category"
+                    )
+                    charts.append(fig_category)
+                    
+                    # Sales by territory
+                    fig_territory = px.pie(
+                        sales_data.groupby("Territory")["LineTotal"].sum().reset_index(),
+                        values="LineTotal",
+                        names="Territory",
+                        title="Sales by Territory"
+                    )
+                    charts.append(fig_territory)
+            
+            elif report_type == "Customer Insights":
+                # Similar implementation for customer insights charts
+                pass
                 
-            elif action == "export_client_config":
-                client_name = data.get("client_name")
-                output_path = data.get("output_path")
-                success = self.export_client_config(client_name, output_path)
-                return {"status": "success" if success else "error"}
+            elif report_type == "Inventory Status":
+                # Similar implementation for inventory status charts
+                pass
                 
-            elif action == "import_client_config":
-                config_path = data.get("config_path")
-                client_name = data.get("client_name")
-                success = self.import_client_config(config_path, client_name)
-                return {"status": "success" if success else "error"}
-                
-            return {"status": "error", "message": "Invalid action"}
+            elif report_type == "Financial Performance":
+                # Similar implementation for financial performance charts
+                pass
+            
+            return charts
             
         except Exception as e:
-            self.logger.error(f"Error processing request: {str(e)}")
-            return {"status": "error", "message": str(e)} 
+            self.logger.error(f"Error generating charts: {str(e)}")
+            raise
+
+    async def _generate_insights(self, data_tables: Dict[str, pd.DataFrame], parameters: Dict[str, Any]) -> Optional[str]:
+        """Generate insights from the data."""
+        try:
+            if not self.openai_api_key:
+                return None
+            
+            report_type = parameters.get("report_type")
+            insights = []
+            
+            if report_type == "Sales Analysis":
+                sales_data = data_tables.get("sales_data")
+                if sales_data is not None:
+                    # Calculate key metrics
+                    total_sales = sales_data["LineTotal"].sum()
+                    avg_order_value = sales_data["LineTotal"].mean()
+                    top_categories = sales_data.groupby("CategoryName")["LineTotal"].sum().nlargest(3)
+                    top_territories = sales_data.groupby("Territory")["LineTotal"].sum().nlargest(3)
+                    
+                    # Generate insights using OpenAI
+                    prompt = f"""
+                    Analyze the following sales metrics and provide 3-5 key business insights:
+                    
+                    Total Sales: ${total_sales:,.2f}
+                    Average Order Value: ${avg_order_value:,.2f}
+                    
+                    Top Categories:
+                    {top_categories.to_string()}
+                    
+                    Top Territories:
+                    {top_territories.to_string()}
+                    
+                    Provide insights in bullet points.
+                    """
+                    
+                    response = await openai.ChatCompletion.acreate(
+                        model="gpt-4-turbo-preview",
+                        messages=[
+                            {"role": "system", "content": "You are a business analyst providing insights from sales data."},
+                            {"role": "user", "content": prompt}
+                        ],
+                        temperature=0.7,
+                        max_tokens=500
+                    )
+                    
+                    return response.choices[0].message.content
+            
+            elif report_type == "Customer Insights":
+                # Similar implementation for customer insights
+                pass
+                
+            elif report_type == "Inventory Status":
+                # Similar implementation for inventory status
+                pass
+                
+            elif report_type == "Financial Performance":
+                # Similar implementation for financial performance
+                pass
+            
+            return None
+            
+        except Exception as e:
+            self.logger.error(f"Error generating insights: {str(e)}")
+            return None
+
+    async def _generate_summary(self, data_tables: Dict[str, pd.DataFrame], parameters: Dict[str, Any]) -> Optional[str]:
+        """Generate a summary of the report."""
+        try:
+            if not self.openai_api_key:
+                return None
+            
+            report_type = parameters.get("report_type")
+            summary_data = {}
+            
+            if report_type == "Sales Analysis":
+                sales_data = data_tables.get("sales_data")
+                if sales_data is not None:
+                    summary_data.update({
+                        "total_sales": sales_data["LineTotal"].sum(),
+                        "total_orders": len(sales_data["OrderDate"].unique()),
+                        "avg_order_value": sales_data["LineTotal"].mean(),
+                        "top_category": sales_data.groupby("CategoryName")["LineTotal"].sum().idxmax(),
+                        "top_territory": sales_data.groupby("Territory")["LineTotal"].sum().idxmax()
+                    })
+            
+            # Generate summary using OpenAI
+            prompt = f"""
+            Generate a brief executive summary for a {report_type} report with the following metrics:
+            
+            {json.dumps(summary_data, indent=2)}
+            
+            Keep the summary concise and focused on key findings.
+            """
+            
+            response = await openai.ChatCompletion.acreate(
+                model="gpt-4-turbo-preview",
+                messages=[
+                    {"role": "system", "content": "You are a business analyst writing executive summaries."},
+                    {"role": "user", "content": prompt}
+                ],
+                temperature=0.7,
+                max_tokens=300
+            )
+            
+            return response.choices[0].message.content
+            
+        except Exception as e:
+            self.logger.error(f"Error generating summary: {str(e)}")
+            return None
+
+    async def _generate_output_file(
+        self,
+        data_tables: Dict[str, pd.DataFrame],
+        charts: List[go.Figure],
+        insights: Optional[str],
+        summary: Optional[str],
+        parameters: Dict[str, Any]
+    ) -> str:
+        """Generate output file in the specified format."""
+        try:
+            output_format = parameters.get("output_format", "Interactive Dashboard")
+            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+            report_type = parameters.get("report_type", "Report").replace(" ", "_")
+            filename = f"{report_type}_{timestamp}"
+            
+            if output_format == "PDF Report":
+                # TODO: Implement PDF generation
+                pass
+                
+            elif output_format == "Excel Spreadsheet":
+                excel_path = self.output_dir / f"{filename}.xlsx"
+                with pd.ExcelWriter(excel_path) as writer:
+                    # Write data tables
+                    for name, df in data_tables.items():
+                        df.to_excel(writer, sheet_name=name, index=False)
+                    
+                    # Write summary and insights
+                    summary_df = pd.DataFrame({
+                        "Section": ["Summary", "Insights"],
+                        "Content": [summary or "", insights or ""]
+                    })
+                    summary_df.to_excel(writer, sheet_name="Summary", index=False)
+                
+                return str(excel_path)
+                
+            elif output_format == "HTML Report":
+                # TODO: Implement HTML report generation
+                pass
+            
+            return ""
+            
+        except Exception as e:
+            self.logger.error(f"Error generating output file: {str(e)}")
+            return ""
+
+    async def _create_visualization(self, data: pd.DataFrame, viz_type: str, options: Dict[str, Any]) -> Dict[str, Any]:
+        """Create visualization based on type and options."""
+        try:
+            if viz_type == "Sales Trends":
+                fig = px.line(
+                    data,
+                    x="OrderDate",
+                    y="TotalSales",
+                    title="Sales Trends Over Time"
+                )
+            elif viz_type == "Product Performance":
+                fig = px.bar(
+                    data,
+                    x="ProductName",
+                    y=options.get("metric", "Revenue"),
+                    title=f"Top Products by {options.get('metric', 'Revenue')}"
+                )
+            elif viz_type == "Customer Segments":
+                fig = px.scatter(
+                    data,
+                    x="OrderCount",
+                    y="AvgOrderValue",
+                    size="TotalSpent",
+                    title="Customer Segmentation"
+                )
+            elif viz_type == "Geographic Analysis":
+                fig = px.choropleth(
+                    data,
+                    locations="Region",
+                    color=options.get("metric", "TotalSales"),
+                    title=f"Geographic Distribution of {options.get('metric', 'Sales')}"
+                )
+            else:
+                raise ValueError(f"Unsupported visualization type: {viz_type}")
+            
+            return {
+                "success": True,
+                "data": {
+                    "chart": fig
+                }
+            }
+        except Exception as e:
+            self.logger.error(f"Error creating visualization: {str(e)}")
+            return {
+                "success": False,
+                "error": str(e)
+            }
+
+    async def generate_report(self, query: str) -> Dict[str, Any]:
+        """
+        Generates any type of report based on natural language query and available data
+        using a multi-agent approach
+        
+        Args:
+            query (str): Natural language query describing the desired report
+            
+        Returns:
+            Dict containing:
+            - analysis_results: Dict of analyzed data
+            - visualizations: List of generated visualizations
+            - insights: Natural language insights
+            - metadata: Report generation metadata
+        """
+        try:
+            # Get available data schema
+            available_data = await self._get_available_data_schema()
+            
+            # Initialize the report generation chat
+            report_request = {
+                'query': query,
+                'available_data': available_data,
+                'timestamp': datetime.now().isoformat()
+            }
+            
+            # Start the multi-agent conversation
+            await self.coordinator.initiate_chat(
+                self.analyst_agent,
+                message=f"Analyze this report request: {report_request}"
+            )
+            
+            # Validate feasibility
+            feasibility_result = await self._validate_request(query, available_data)
+            if not feasibility_result['is_feasible']:
+                return {
+                    'error': 'Cannot generate requested report with available data',
+                    'suggestions': feasibility_result['alternative_suggestions'],
+                    'status': 'failed',
+                    'metadata': {
+                        'generated_at': datetime.now().isoformat(),
+                        'query': query
+                    }
+                }
+            
+            # Generate the report components using the agent system
+            analysis_results = await self._generate_analysis(
+                feasibility_result['validated_params'],
+                available_data
+            )
+            
+            visualizations = await self._generate_visualizations(
+                analysis_results,
+                feasibility_result['validated_params']
+            )
+            
+            insights = await self._generate_insights(
+                analysis_results,
+                visualizations,
+                feasibility_result['validated_params']
+            )
+            
+            return {
+                'analysis_results': analysis_results,
+                'visualizations': visualizations,
+                'insights': insights,
+                'metadata': {
+                    'generated_at': datetime.now().isoformat(),
+                    'query': query,
+                    'data_columns_used': list(analysis_results.keys()),
+                    'status': 'success'
+                }
+            }
+            
+        except Exception as e:
+            return {
+                'error': str(e),
+                'status': 'failed',
+                'metadata': {
+                    'generated_at': datetime.now().isoformat(),
+                    'query': query
+                }
+            }
+
+    async def _validate_request(self, query: str, available_data: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        Uses the analyst agent to validate if the report request is feasible
+        """
+        validation_result = await self.coordinator.get_agent_response(
+            self.analyst_agent,
+            f"Validate if this report request can be fulfilled with available data: {query}\nAvailable data: {available_data}"
+        )
+        return validation_result
+
+    async def _generate_analysis(self, params: Dict[str, Any], data: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        Uses the analyst agent to generate the analysis
+        """
+        analysis_result = await self.coordinator.get_agent_response(
+            self.analyst_agent,
+            f"Generate analysis based on these parameters: {params}\nUsing data: {data}"
+        )
+        return analysis_result
+
+    async def _generate_visualizations(self, analysis_results: Dict[str, Any], params: Dict[str, Any]) -> List[Dict[str, Any]]:
+        """
+        Uses the visualization agent to generate appropriate visualizations
+        """
+        viz_result = await self.coordinator.get_agent_response(
+            self.visualization_agent,
+            f"Create visualizations for these analysis results: {analysis_results}\nParameters: {params}"
+        )
+        return viz_result
+
+    async def _generate_insights(self, analysis_results: Dict[str, Any], visualizations: List[Dict[str, Any]], params: Dict[str, Any]) -> List[str]:
+        """
+        Uses the insight agent to generate insights from the analysis and visualizations
+        """
+        insights_result = await self.coordinator.get_agent_response(
+            self.insight_agent,
+            f"Generate insights from analysis: {analysis_results}\nVisualizations: {visualizations}\nParameters: {params}"
+        )
+        return insights_result
+
+    async def _get_available_data_schema(self) -> Dict[str, Any]:
+        """
+        Gets the available data schema from the data source
+        """
+        return await self.data_source.get_schema()
