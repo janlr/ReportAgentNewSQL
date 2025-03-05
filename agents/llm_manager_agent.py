@@ -8,7 +8,10 @@ from pathlib import Path
 import hashlib
 import os
 from tenacity import retry, stop_after_attempt, wait_exponential
+<<<<<<< HEAD
 from .base_agent import BaseAgent
+=======
+>>>>>>> 85e4930a49d3ee4443b3597a02297d6fc8ad1a59
 
 # Optional prometheus import
 try:
@@ -17,6 +20,7 @@ try:
 except ImportError:
     PROMETHEUS_AVAILABLE = False
 
+<<<<<<< HEAD
 class LLMManagerAgent(BaseAgent):
     """Agent responsible for managing LLM interactions."""
     
@@ -29,6 +33,13 @@ class LLMManagerAgent(BaseAgent):
         if config["provider"].lower() == "openai":
             openai.api_key = config.get("api_key")
         
+=======
+class LLMManagerAgent:
+    """Manages LLM providers, caching, and optimization."""
+    
+    def __init__(self, config: Dict[str, Any]):
+        self.config = config
+>>>>>>> 85e4930a49d3ee4443b3597a02297d6fc8ad1a59
         self.active_provider = config.get("default_provider", "openai")
         self.cache_dir = Path(config.get("cache_dir", "./cache/llm"))
         self.cache_dir.mkdir(parents=True, exist_ok=True)
@@ -258,6 +269,14 @@ class LLMManagerAgent(BaseAgent):
             )
         }
     
+<<<<<<< HEAD
+=======
+    def _setup_logging(self):
+        """Initialize logging."""
+        self.logger = logging.getLogger("llm_manager")
+        self.logger.setLevel(logging.INFO)
+    
+>>>>>>> 85e4930a49d3ee4443b3597a02297d6fc8ad1a59
     def get_available_providers(self) -> List[str]:
         """Get list of available LLM providers."""
         providers = []
@@ -323,6 +342,7 @@ class LLMManagerAgent(BaseAgent):
             raise Exception("Daily cost limit exceeded")
     
     async def initialize(self) -> bool:
+<<<<<<< HEAD
         """Initialize LLM manager."""
         if not self.validate_config(self.required_config):
             return False
@@ -365,6 +385,55 @@ class LLMManagerAgent(BaseAgent):
                 "analysis": "Text analysis placeholder"
             }
         }
+=======
+        """Initialize the LLM manager agent."""
+        try:
+            # Verify API keys are present
+            if "openai" in self.config and not self.config["openai"].get("api_key"):
+                self.logger.error("OpenAI API key not provided")
+                return False
+                
+            if "anthropic" in self.config and not self.config["anthropic"].get("api_key"):
+                self.logger.error("Anthropic API key not provided")
+                return False
+                
+            if "azure_openai" in self.config and not self.config["azure_openai"].get("api_key"):
+                self.logger.error("Azure OpenAI API key not provided")
+                return False
+            
+            # Test connection to active provider
+            test_prompt = "Test connection."
+            await self.generate_async({
+                "prompt": test_prompt,
+                "max_tokens": 5
+            })
+            
+            self.logger.info(f"LLM manager initialized successfully with provider: {self.active_provider}")
+            return True
+            
+        except Exception as e:
+            self.logger.error(f"Error initializing LLM manager: {str(e)}")
+            return False
+            
+    async def cleanup(self) -> bool:
+        """Clean up resources."""
+        try:
+            # Clear cache if needed
+            if self.cache_config["enabled"]:
+                for cache_file in self.cache_dir.glob("*.json"):
+                    cache_file.unlink()
+            
+            # Reset metrics
+            for metric in self.metrics.values():
+                if hasattr(metric, "clear"):
+                    metric.clear()
+            
+            return True
+            
+        except Exception as e:
+            self.logger.error(f"Error cleaning up LLM manager: {str(e)}")
+            return False
+>>>>>>> 85e4930a49d3ee4443b3597a02297d6fc8ad1a59
 
     def _update_metrics(self, metric_name: str, labels: Dict[str, str], value: float = 1):
         """Update metrics if monitoring is enabled."""

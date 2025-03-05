@@ -1,3 +1,4 @@
+<<<<<<< HEAD
 # Core Data Processing
 pandas>=2.0.0
 numpy>=1.24.0
@@ -89,14 +90,44 @@ pytest-html==4.1.1
 pytest-xdist==3.3.1  # For parallel test execution
 pytest-timeout==2.2.0
 coverage==7.3.2
+=======
+# Core dependencies
+streamlit>=1.24.0
+pandas>=1.5.3
+numpy>=1.24.3
+sqlalchemy>=2.0.0
+pyodbc>=4.0.39
+python-dotenv>=1.0.0
 
-# Type checking
-types-python-dateutil==2.8.19.14
-types-requests==2.31.0.10
-types-PyMySQL==1.1.0.1
-types-psycopg2==2.9.21.11
-types-redis==4.6.0.7
+# AutoGen and AI
+pyautogen>=0.1.0
+openai>=1.3.0
 
+# Data visualization
+plotly>=5.15.0
+matplotlib>=3.7.1
+seaborn>=0.12.2
+bokeh>=3.0.0
+
+# Machine Learning
+scikit-learn>=1.3.0
+
+# Database drivers
+pymysql>=1.0.2
+psycopg2-binary>=2.9.5
+
+# Testing and development
+pytest>=7.3.1
+mypy>=1.0.0
+black>=22.3.0
+>>>>>>> 85e4930a49d3ee4443b3597a02297d6fc8ad1a59
+
+# Report generation
+weasyprint>=59.0
+pdfkit>=1.0.0
+jupyter>=1.0.0
+
+<<<<<<< HEAD
 # Monitoring and logging
 prometheus-client>=0.19.0
 opentelemetry-api==1.20.0
@@ -131,3 +162,86 @@ filelock==3.17.0
 fsspec==2025.2.0
 networkx==3.4.2
 sympy==1.13.1
+=======
+# Core Data Processing
+scipy>=1.10.0
+
+# Database Connectors
+pymongo>=4.5.0  # MongoDB
+oracledb>=1.4.2  # Oracle
+alembic>=1.12.1  # Database migrations
+
+# Visualization Libraries
+seaborn>=0.12.0
+bokeh>=3.2.0
+pydeck>=0.8.0
+
+# Web Framework and Dashboard
+dash>=2.11.0
+fastapi>=0.104.1
+uvicorn>=0.24.0
+
+# Reporting and Export
+nbformat>=5.9.0
+openpyxl>=3.1.0
+xlsxwriter>=3.1.9
+jinja2>=3.1.2
+
+# Time Series and Statistics
+prophet>=1.1.0
+statsmodels>=0.14.0
+
+# AutoGen and LLM
+anthropic>=0.5.0
+tiktoken>=0.5.1
+sentence-transformers>=2.2.0
+torch>=2.0.0
+transformers>=4.30.0
+accelerate>=0.24.1
+
+# Caching and Performance
+redis>=5.0.1
+cachetools>=5.3.2
+diskcache>=5.6.3
+joblib>=1.4.2
+
+# Security and Authentication
+python-jose>=3.3.0
+passlib>=1.7.4
+python-multipart>=0.0.6
+cryptography>=41.0.5
+bcrypt>=4.0.1
+keyring>=24.3.0
+
+# Monitoring and Logging
+prometheus-client>=0.18.0
+opentelemetry-api>=1.20.0
+opentelemetry-sdk>=1.20.0
+structlog>=23.2.0
+
+# Testing and Type Checking
+pytest-cov>=4.1.0
+pytest-mock>=3.12.0
+pytest-asyncio>=0.21.1
+pytest-html>=4.1.1
+pytest-xdist>=3.3.1
+coverage>=7.3.2
+
+# Type Stubs
+types-python-dateutil>=2.8.19
+types-requests>=2.31.0
+types-PyMySQL>=1.1.0
+types-psycopg2>=2.9.21
+types-redis>=4.6.0
+
+# Utilities
+requests>=2.31.0
+tqdm>=4.65.0
+python-dateutil>=2.8.2
+pytz>=2023.3
+tenacity>=8.2.3
+humanize>=4.8.0
+aiohttp>=3.9.0
+httpx>=0.25.1
+urllib3>=2.1.0
+>>>>>>> 85e4930a49d3ee4443b3597a02297d6fc8ad1a59

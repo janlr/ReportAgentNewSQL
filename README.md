@@ -31,6 +31,22 @@ cp .env.example .env
 # Edit .env with your configuration
 ```
 
+## Environment Setup
+
+1. Copy the example environment file:
+```bash
+cp .env.example .env
+```
+
+2. Edit `.env` with your actual configuration:
+```env
+DB_HOST=your_actual_host
+DB_PASSWORD=your_actual_password
+OPENAI_API_KEY=your_actual_api_key
+```
+
+⚠️ Never commit your `.env` file to version control!
+
 ## Usage
 
 1. Configure your database connection in `.env`:

@@ -14,9 +14,15 @@ class DataManagerAgent(BaseAgent):
     
     def __init__(self, config: Dict[str, Any]):
         """Initialize with configuration."""
+<<<<<<< HEAD
         super().__init__(config)
         self.required_config = ["cache_dir", "batch_size", "max_workers"]
         self.cache_dir = Path(config.get("cache_dir", "./cache/data"))
+=======
+        super().__init__("data_manager_agent")
+        self.config = config
+        self.cache_dir = Path(config.get("cache_dir", "./cache"))
+>>>>>>> 85e4930a49d3ee4443b3597a02297d6fc8ad1a59
         self.cache_dir.mkdir(parents=True, exist_ok=True)
         
         # Set up directories
@@ -64,6 +70,7 @@ class DataManagerAgent(BaseAgent):
             conn.commit()
     
     async def initialize(self) -> bool:
+<<<<<<< HEAD
         """Initialize the data manager agent."""
         if not self.validate_config(self.required_config):
             return False
@@ -77,11 +84,18 @@ class DataManagerAgent(BaseAgent):
         try:
             # Clean up any resources
             self.logger.info("Data manager agent cleaned up successfully")
+=======
+        """Initialize data manager resources."""
+        try:
+            # Initialize cache and any other resources
+            self.logger.info("Data manager agent initialized successfully")
+>>>>>>> 85e4930a49d3ee4443b3597a02297d6fc8ad1a59
             return True
         except Exception as e:
             self.logger.error(f"Error cleaning up data manager agent: {str(e)}")
             return False
     
+<<<<<<< HEAD
     async def process(self, request: Dict[str, Any]) -> Dict[str, Any]:
         """Process data-related requests."""
         try:
@@ -124,32 +138,67 @@ class DataManagerAgent(BaseAgent):
             elif action == "import_excel":
                 file_path = request.get("file_path")
                 sheet_name = request.get("sheet_name")
-                return await self._import_excel(file_path, sheet_name)
+=======
+    async def cleanup(self) -> bool:
+        """Clean up data manager resources."""
+        try:
+            # Cleanup resources
+            self.logger.info("Data manager agent cleaned up successfully")
+            return True
+        except Exception as e:
+            self.logger.error(f"Error cleaning up data manager: {str(e)}")
+            return False
+    
+    async def process(self, input_data: Dict[str, Any]) -> Dict[str, Any]:
+        """Process data management requests."""
+        try:
+            if not self.validate_input(input_data, ["action", "data"]):
+                raise ValueError("Missing required fields: action, data")
             
+            action = input_data["action"]
+            data = input_data["data"]
+            
+            if action == "clean_data":
+                return await self._clean_data(data)
+            elif action == "transform_data":
+                return await self._transform_data(data)
+            elif action == "import_excel":
+                file_path = input_data.get("file_path")
+                sheet_name = input_data.get("sheet_name")
+>>>>>>> 85e4930a49d3ee4443b3597a02297d6fc8ad1a59
+                return await self._import_excel(file_path, sheet_name)
             elif action == "add_favorite":
+<<<<<<< HEAD
                 return await self._add_favorite(request)
             
+=======
+                return await self._add_favorite(input_data)
+>>>>>>> 85e4930a49d3ee4443b3597a02297d6fc8ad1a59
             elif action == "get_favorite":
                 favorite_id = request.get("favorite_id")
                 return await self._get_favorite(favorite_id)
-            
             elif action == "list_favorites":
                 report_type = request.get("report_type")
                 tags = request.get("tags")
                 return await self._list_favorites(report_type, tags)
-            
             elif action == "delete_favorite":
                 favorite_id = request.get("favorite_id")
                 return await self._delete_favorite(favorite_id)
-            
             else:
                 return {"success": False, "error": f"Unknown action: {action}"}
                 
         except Exception as e:
+<<<<<<< HEAD
             self.logger.error(f"Error processing data request: {str(e)}")
             return {"success": False, "error": str(e)}
     
     def _clean_data(self, df: pd.DataFrame) -> pd.DataFrame:
+=======
+            self.logger.error(f"Error processing data: {str(e)}")
+            return {"success": False, "error": str(e)}
+    
+    def _clean_data(self, df: pd.DataFrame) -> Dict[str, Any]:
+>>>>>>> 85e4930a49d3ee4443b3597a02297d6fc8ad1a59
         """Clean and preprocess data."""
         try:
             # Create a copy to avoid modifying the original
@@ -182,6 +231,7 @@ class DataManagerAgent(BaseAgent):
                 upper_bound = Q3 + 1.5 * IQR
                 cleaned[column] = cleaned[column].clip(lower=lower_bound, upper=upper_bound)
             
+<<<<<<< HEAD
             return cleaned
             
         except Exception as e:
@@ -189,10 +239,23 @@ class DataManagerAgent(BaseAgent):
             return df
     
     def _apply_transformations(self, df: pd.DataFrame, transformations: List[Dict[str, Any]]) -> pd.DataFrame:
+=======
+            return {
+                "success": True,
+                "data": cleaned
+            }
+            
+        except Exception as e:
+            self.logger.error(f"Error cleaning data: {str(e)}")
+            return {"success": False, "error": str(e)}
+    
+    def _transform_data(self, df: pd.DataFrame) -> Dict[str, Any]:
+>>>>>>> 85e4930a49d3ee4443b3597a02297d6fc8ad1a59
         """Apply a series of transformations to the data."""
         try:
             transformed = df.copy()
             
+<<<<<<< HEAD
             for transform in transformations:
                 transform_type = transform.get("type")
                 params = transform.get("parameters", {})
@@ -230,6 +293,21 @@ class DataManagerAgent(BaseAgent):
         except Exception as e:
             self.logger.error(f"Error applying transformations: {str(e)}")
             return df
+=======
+            # Apply transformations
+            # This is a placeholder implementation. You might want to implement
+            # the actual transformation logic here based on the transformations
+            # specified in the input data.
+            
+            return {
+                "success": True,
+                "data": transformed
+            }
+            
+        except Exception as e:
+            self.logger.error(f"Error applying transformations: {str(e)}")
+            return {"success": False, "error": str(e)}
+>>>>>>> 85e4930a49d3ee4443b3597a02297d6fc8ad1a59
     
     async def _import_excel(self, file_path: str, sheet_name: Optional[str] = None) -> Dict[str, Any]:
         """Import data from an Excel file."""

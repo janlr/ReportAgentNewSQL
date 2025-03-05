@@ -5,6 +5,8 @@ from datetime import datetime, timedelta
 from unittest.mock import Mock, patch
 import asyncio
 import time
+import os
+from agents import initialize_environment
 
 from agents.master_orchestrator_agent import MasterOrchestratorAgent
 from agents.database_agent import DatabaseAgent
@@ -39,6 +41,18 @@ def sample_config():
 @pytest.fixture
 def orchestrator(sample_config):
     return MasterOrchestratorAgent(sample_config)
+
+@pytest.fixture(autouse=True)
+def setup_environment():
+    """Setup test environment variables."""
+    os.environ['DB_HOST'] = 'test_host'
+    os.environ['DB_PORT'] = '1433'
+    os.environ['DB_NAME'] = 'test_db'
+    os.environ['DB_USER'] = 'test_user'
+    os.environ['DB_PASSWORD'] = 'test_password'
+    os.environ['OPENAI_API_KEY'] = 'test_openai_key'
+    os.environ['ENVIRONMENT'] = 'testing'
+    initialize_environment()
 
 class TestAgentCommunicationFailures:
     """Test scenarios where agent communication fails."""
@@ -150,6 +164,24 @@ class TestDataConsistency:
         
         assert all('update_successful' in r for r in results)
         assert len(set(r['data_version'] for r in results)) == 1  # All updates should see same version
+
+@pytest.mark.asyncio
+async def test_full_report_workflow(orchestrator):
+    """Test complete workflow from data to report."""
+    result = await orchestrator.process({
+        "workflow": "report_generation",
+        "action": "generate_report",
+        "parameters": {
+            "report_type": "Sales Analysis",
+            "start_date": "2023-01-01",
+            "end_date": "2023-12-31"
+        }
+    })
+    
+    assert result["success"] == True
+    assert "data" in result
+    assert "charts" in result["data"]
+    assert "insights" in result["data"]
 
 if __name__ == "__main__":
     pytest.main([__file__]) 

@@ -22,8 +22,17 @@ wheels/
 
 # Virtual Environment
 venv/
+<<<<<<< HEAD
 env/
 ENV/
+=======
+ENV/
+.env
+.venv
+env/
+env.bak/
+venv.bak/
+>>>>>>> 85e4930a49d3ee4443b3597a02297d6fc8ad1a59
 
 # IDE
 .idea/
@@ -74,7 +83,19 @@ docs/_build/
 *.docx
 *.xlsx
 *.pdf
+<<<<<<< HEAD
 
 # Streamlit secrets
 .streamlit/secrets.toml
 *.streamlit/secrets.toml 
+=======
+config/*.json
+!config/default.json
+
+# Streamlit secrets
+.streamlit/secrets.toml
+
+# OS
+.DS_Store
+Thumbs.db 
+>>>>>>> 85e4930a49d3ee4443b3597a02297d6fc8ad1a59

@@ -3,6 +3,7 @@ import plotly.express as px
 import plotly.graph_objects as go
 import json
 from datetime import datetime
+<<<<<<< HEAD
 from typing import Dict, Any, List, Optional, Union
 import openai
 from pathlib import Path
@@ -21,12 +22,20 @@ from agents import *
 
 # Import the package
 import agents
+=======
+from typing import Dict, Any, List, Optional
+import openai
+from pathlib import Path
+from agents.base_agent import BaseAgent
+from sqlalchemy import create_engine
+>>>>>>> 85e4930a49d3ee4443b3597a02297d6fc8ad1a59
 
 class ReportGeneratorAgent(BaseAgent):
     """Agent responsible for generating reports."""
     
-    def __init__(self, config: Dict[str, Any]):
+    def __init__(self, config: Dict[str, Any], output_dir: str, openai_api_key: str):
         """Initialize with configuration."""
+<<<<<<< HEAD
         super().__init__(config)
         self.required_config = ["template_dir", "output_dir"]
         self.template_dir = Path(config.get("template_dir", "./templates"))
@@ -116,6 +125,43 @@ class ReportGeneratorAgent(BaseAgent):
     async def cleanup(self) -> bool:
         """Clean up resources."""
         try:
+=======
+        super().__init__("report_generator_agent")
+        self.config = config
+        self.output_dir = Path(output_dir)
+        self.output_dir.mkdir(parents=True, exist_ok=True)
+        self.openai_api_key = openai_api_key
+        
+    async def initialize(self) -> bool:
+        """Initialize the report generator."""
+        try:
+            # Set up OpenAI API key
+            openai.api_key = self.openai_api_key
+            
+            # Verify output directory exists and is writable
+            if not self.output_dir.exists():
+                self.output_dir.mkdir(parents=True)
+            
+            # Test write permissions
+            test_file = self.output_dir / ".test"
+            try:
+                test_file.touch()
+                test_file.unlink()
+            except Exception as e:
+                self.logger.error(f"Output directory is not writable: {str(e)}")
+                return False
+            
+            self.logger.info("Report generator initialized successfully")
+            return True
+            
+        except Exception as e:
+            self.logger.error(f"Error initializing report generator: {str(e)}")
+            return False
+    
+    async def cleanup(self) -> bool:
+        """Clean up resources."""
+        try:
+>>>>>>> 85e4930a49d3ee4443b3597a02297d6fc8ad1a59
             # Any cleanup needed
             self.logger.info("Report generator cleaned up successfully")
             return True
@@ -123,6 +169,76 @@ class ReportGeneratorAgent(BaseAgent):
             self.logger.error(f"Error cleaning up report generator: {str(e)}")
             return False
     
+<<<<<<< HEAD
+=======
+    async def process(self, input_data: Dict[str, Any]) -> Dict[str, Any]:
+        """Process report generation requests."""
+        try:
+            if not self.validate_input(input_data, ["action", "parameters"]):
+                raise ValueError("Missing required fields: action, parameters")
+            
+            action = input_data["action"]
+            parameters = input_data["parameters"]
+            
+            if action == "create_visualization":
+                # Get data if not provided
+                if "data" not in parameters:
+                    data_tables = await self._gather_report_data(parameters)
+                    if not data_tables or "sales_data" not in data_tables:
+                        raise ValueError("Failed to gather visualization data")
+                    data = data_tables["sales_data"]
+                else:
+                    data = parameters["data"]
+                
+                # Create visualization
+                return await self._create_visualization(
+                    data,
+                    parameters["viz_type"],
+                    parameters.get("options", {})
+                )
+            
+            elif action == "generate_report":
+                # Gather data
+                data_tables = await self._gather_report_data(parameters)
+                
+                # Generate charts
+                charts = await self._generate_charts(data_tables, parameters)
+                
+                # Generate insights if requested
+                insights = None
+                if parameters.get("include_insights", True):
+                    insights = await self._generate_insights(data_tables, parameters)
+                
+                # Generate summary
+                summary = await self._generate_summary(data_tables, parameters)
+                
+                # Generate output file
+                output_file = await self._generate_output_file(
+                    data_tables, charts, insights, summary, parameters
+                )
+                
+                return {
+                    "success": True,
+                    "data": {
+                        "data_tables": data_tables,
+                        "charts": charts,
+                        "insights": insights,
+                        "summary": summary,
+                        "output_file": output_file
+                    }
+                }
+            
+            else:
+                raise ValueError(f"Unknown action: {action}")
+                
+        except Exception as e:
+            self.logger.error(f"Error processing report request: {str(e)}")
+            return {
+                "success": False,
+                "error": str(e)
+            }
+
+>>>>>>> 85e4930a49d3ee4443b3597a02297d6fc8ad1a59
     async def _gather_report_data(self, parameters: Dict[str, Any]) -> Dict[str, pd.DataFrame]:
         """Gather data for the report based on parameters."""
         try:
@@ -469,6 +585,7 @@ class ReportGeneratorAgent(BaseAgent):
                 "success": False,
                 "error": str(e)
             }
+<<<<<<< HEAD
 
     async def generate_report(self, query: str) -> Dict[str, Any]:
         """
@@ -599,3 +716,5 @@ class ReportGeneratorAgent(BaseAgent):
         Gets the available data schema from the data source
         """
         return await self.data_source.get_schema()
+=======
+>>>>>>> 85e4930a49d3ee4443b3597a02297d6fc8ad1a59

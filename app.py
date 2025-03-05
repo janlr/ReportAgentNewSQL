@@ -3,6 +3,7 @@ import json
 import logging
 from pathlib import Path
 from datetime import datetime
+<<<<<<< HEAD
 import asyncio
 import pandas as pd
 import os
@@ -13,6 +14,45 @@ from agents.assistant_agent import AssistantAgent
 from agents.data_manager_agent import DataManagerAgent
 from agents.report_generator_agent import ReportGeneratorAgent
 from agents.insight_generator_agent import InsightGeneratorAgent
+=======
+from agents.master_orchestrator_agent import MasterOrchestratorAgent
+import asyncio
+import pandas as pd
+from agents import initialize_environment
+import os
+from utils.schema_configurator import SchemaConfigurator
+
+# Add this after initialize_environment()
+def check_environment():
+    required_vars = [
+        'DB_HOST', 'DB_PORT', 'DB_NAME', 'DB_USER', 'DB_PASSWORD', 
+        'DB_DRIVER', 'OPENAI_API_KEY'
+    ]
+    missing = [var for var in required_vars if not os.getenv(var)]
+    if missing:
+        raise RuntimeError(f"Missing required environment variables: {', '.join(missing)}")
+
+# Add after imports
+def ensure_directories():
+    """Ensure all required directories exist."""
+    directories = [
+        "./cache",
+        "./cache/insights",
+        "./preferences",
+        "./reports",
+        "./templates",
+        "./logs"
+    ]
+    for directory in directories:
+        Path(directory).mkdir(parents=True, exist_ok=True)
+
+# Add before initialize_environment()
+ensure_directories()
+
+# Initialize environment and check variables
+initialize_environment()
+check_environment()
+>>>>>>> 85e4930a49d3ee4443b3597a02297d6fc8ad1a59
 
 # Configure logging
 logging.basicConfig(
@@ -21,6 +61,7 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
+<<<<<<< HEAD
 # Set page config
 st.set_page_config(
     page_title="Report Agent Dashboard",
@@ -31,11 +72,14 @@ st.set_page_config(
 # Title
 st.title("Report Agent Dashboard")
 
+=======
+>>>>>>> 85e4930a49d3ee4443b3597a02297d6fc8ad1a59
 # Initialize components
 async def init_components():
     try:
         # Load configuration
         config = {
+<<<<<<< HEAD
             "database": {
                 "type": "mssql",
                 "host": "localhost",
@@ -51,13 +95,25 @@ async def init_components():
                 "enable_compression": True,
                 "retention_days": 30
             },
+=======
+            "database": st.session_state.config['database'],
+>>>>>>> 85e4930a49d3ee4443b3597a02297d6fc8ad1a59
             "user_interface": {
                 "preferences_dir": "./preferences"
             },
             "report_generator": {
+<<<<<<< HEAD
                 "template_dir": "./templates",
                 "output_dir": "./reports",
                 "openai_api_key": st.secrets["api_keys"]["openai"]
+=======
+                "config": {
+                    "template_dir": "./templates",
+                    "output_dir": "./reports"
+                },
+                "output_dir": "./reports",  # Direct parameters for constructor
+                "openai_api_key": st.session_state.config['api_keys']['openai']  # Direct parameter for constructor
+>>>>>>> 85e4930a49d3ee4443b3597a02297d6fc8ad1a59
             },
             "insight_generator": {
                 "llm_manager": {
@@ -65,6 +121,7 @@ async def init_components():
                     "model": "gpt-4-turbo-preview",
                     "temperature": 0.7,
                     "max_tokens": 1000,
+<<<<<<< HEAD
                     "api_key": st.secrets["api_keys"]["openai"]
                 },
                 "cache_dir": "./cache/insights"
@@ -77,15 +134,35 @@ async def init_components():
             output_dir=st.secrets["report_config"]["output_dir"],
             openai_api_key=st.secrets["api_keys"]["openai"]
         )
+=======
+                    "api_key": st.session_state.config['api_keys']['openai']
+                },
+                "cache_dir": "./cache/insights"
+            },
+            "data_manager": {
+                "cache_dir": "./cache"
+            }
+        }
+        
+        logger.info("Creating master orchestrator...")
+        orchestrator = MasterOrchestratorAgent(config)
+        
+        logger.info("Initializing master orchestrator...")
+>>>>>>> 85e4930a49d3ee4443b3597a02297d6fc8ad1a59
         success = await orchestrator.initialize()
         
         if not success:
+            logger.error("Failed to initialize master orchestrator")
             raise RuntimeError("Failed to initialize master orchestrator")
         
+<<<<<<< HEAD
+=======
+        logger.info("Master orchestrator initialized successfully")
+>>>>>>> 85e4930a49d3ee4443b3597a02297d6fc8ad1a59
         return orchestrator
         
     except Exception as e:
-        logger.error(f"Error initializing components: {str(e)}")
+        logger.error(f"Error initializing components: {str(e)}", exc_info=True)
         raise
 
 def main():
@@ -99,12 +176,21 @@ def main():
     st.sidebar.title("Navigation")
     page = st.sidebar.selectbox(
         "Choose a page", 
+<<<<<<< HEAD
         ["Schema Explorer", "Sales Analysis", "Report Generator", "Data Visualization"]
+=======
+        ["Schema Explorer", "Schema Configuration", "Sales Analysis", "Report Generator", "Data Visualization"]
+>>>>>>> 85e4930a49d3ee4443b3597a02297d6fc8ad1a59
     )
     
     try:
         if page == "Schema Explorer":
             schema_explorer()
+<<<<<<< HEAD
+=======
+        elif page == "Schema Configuration":
+            schema_configuration()
+>>>>>>> 85e4930a49d3ee4443b3597a02297d6fc8ad1a59
         elif page == "Sales Analysis":
             sales_analysis()
         elif page == "Report Generator":
@@ -137,7 +223,15 @@ def schema_explorer():
     schemas = sorted(list(set(
         info["schema"] for info in schema_info["tables"].values()
     )))
+<<<<<<< HEAD
     selected_schema = st.selectbox("Select Schema", schemas)
+=======
+    selected_schema = st.selectbox(
+        "Select Schema", 
+        schemas,
+        key="schema_selector"
+    )
+>>>>>>> 85e4930a49d3ee4443b3597a02297d6fc8ad1a59
     
     # Display tables in selected schema
     st.subheader(f"Tables in {selected_schema} Schema")
@@ -147,6 +241,7 @@ def schema_explorer():
         if info["schema"] == selected_schema
     ]
     
+<<<<<<< HEAD
     selected_table = st.selectbox("Select Table", sorted(tables))
     
     if selected_table:
@@ -166,14 +261,58 @@ def schema_explorer():
                     "action": "execute_query",
                     "parameters": {
                         "query": f"SELECT TOP 10 * FROM {selected_schema}.{selected_table}"
+=======
+    selected_table = st.selectbox(
+        "Select Table", 
+        sorted(tables),
+        key="table_selector"
+    )
+    
+    if selected_table:
+        # Get table details
+        full_table_name = f"{selected_schema}.{selected_table}"
+        table_info = schema_info["tables"][full_table_name]
+        
+        # Display table structure
+        st.subheader("Table Structure")
+        columns_df = pd.DataFrame(table_info["columns"])
+        st.dataframe(columns_df)
+        
+        # Display foreign keys if any
+        if table_info.get("foreign_keys"):
+            st.subheader("Foreign Keys")
+            fk_df = pd.DataFrame(table_info["foreign_keys"])
+            st.dataframe(fk_df)
+        
+        # Display sample data
+        if st.button("Show Sample Data", key="show_sample_data_btn"):
+            result = asyncio.run(
+                st.session_state.orchestrator.process({
+                    "workflow": "data_analysis",
+                    "action": "get_sample_data",
+                    "parameters": {
+                        "table_name": full_table_name,
+                        "limit": 10
+>>>>>>> 85e4930a49d3ee4443b3597a02297d6fc8ad1a59
                     }
                 })
             )
             
             if result.get("success"):
+<<<<<<< HEAD
                 st.dataframe(result["data"])
             else:
                 st.error(f"Failed to get sample data: {result.get('error')}")
+=======
+                st.subheader("Sample Data")
+                st.dataframe(result["data"])
+                with st.expander("Debug Logs"):
+                    st.text(result.get("logs", "No logs available"))
+            else:
+                st.error(f"Failed to get sample data: {result.get('error')}")
+                with st.expander("Debug Information"):
+                    st.text(result.get("logs", "No logs available"))
+>>>>>>> 85e4930a49d3ee4443b3597a02297d6fc8ad1a59
 
 def sales_analysis():
     st.header("Sales Analysis")
@@ -181,9 +320,15 @@ def sales_analysis():
     # Date range selection
     col1, col2 = st.columns(2)
     with col1:
+<<<<<<< HEAD
         start_date = st.date_input("Start Date")
     with col2:
         end_date = st.date_input("End Date")
+=======
+        start_date = st.date_input("Start Date", key="sales_start_date")
+    with col2:
+        end_date = st.date_input("End Date", key="sales_end_date")
+>>>>>>> 85e4930a49d3ee4443b3597a02297d6fc8ad1a59
     
     # Product category selection
     result = asyncio.run(
@@ -195,13 +340,25 @@ def sales_analysis():
     
     if result.get("success"):
         categories = result["data"]
+<<<<<<< HEAD
         selected_categories = st.multiselect("Product Categories", categories)
+=======
+        selected_categories = st.multiselect(
+            "Product Categories", 
+            categories,
+            key="product_categories"  # Add unique key
+        )
+>>>>>>> 85e4930a49d3ee4443b3597a02297d6fc8ad1a59
     
     # Analysis options
     generate_summary = st.checkbox("Generate AI Summary", value=True)
     include_charts = st.checkbox("Include Charts", value=True)
     
+<<<<<<< HEAD
     if st.button("Generate Analysis"):
+=======
+    if st.button("Generate Analysis", key="generate_analysis_btn"):
+>>>>>>> 85e4930a49d3ee4443b3597a02297d6fc8ad1a59
         if not selected_categories:
             st.warning("Please select at least one product category")
             return
@@ -260,11 +417,17 @@ def report_generator():
         user_prompt = st.text_area(
             "Describe the report you want to generate",
             placeholder="E.g., Show me sales performance by product category for the last quarter",
+<<<<<<< HEAD
             height=100
+=======
+            height=100,
+            key="report_prompt"  # Add unique key
+>>>>>>> 85e4930a49d3ee4443b3597a02297d6fc8ad1a59
         )
         
         # Optional parameters
         with st.expander("Additional Options"):
+<<<<<<< HEAD
             include_charts = st.checkbox("Include visualizations", value=True)
             include_insights = st.checkbox("Include AI-generated insights", value=True)
             output_format = st.selectbox(
@@ -273,6 +436,17 @@ def report_generator():
             )
         
         if st.button("Generate Report", type="primary"):
+=======
+            include_charts = st.checkbox("Include visualizations", value=True, key="include_viz")
+            include_insights = st.checkbox("Include AI-generated insights", value=True, key="include_insights")
+            output_format = st.selectbox(
+                "Output Format",
+                ["Interactive Dashboard", "PDF Report", "Excel Spreadsheet", "HTML Report"],
+                key="output_format"  # Add unique key
+            )
+        
+        if st.button("Generate Report", type="primary", key="nl_generate_report_btn"):
+>>>>>>> 85e4930a49d3ee4443b3597a02297d6fc8ad1a59
             if not user_prompt:
                 st.warning("Please provide a description of the report you want to generate.")
                 return
@@ -329,21 +503,33 @@ def report_generator():
         # Report type selection
         report_type = st.selectbox(
             "Report Type",
+<<<<<<< HEAD
             ["Sales Analysis", "Customer Insights", "Inventory Status", "Financial Performance"]
+=======
+            ["Sales Analysis", "Customer Insights", "Inventory Status", "Financial Performance"],
+            key="advanced_report_type"  # Add unique key
+>>>>>>> 85e4930a49d3ee4443b3597a02297d6fc8ad1a59
         )
         
         # Time period selection
         col1, col2 = st.columns(2)
         with col1:
+<<<<<<< HEAD
             start_date = st.date_input("Start Date")
         with col2:
             end_date = st.date_input("End Date")
+=======
+            start_date = st.date_input("Start Date", key="advanced_start_date")
+        with col2:
+            end_date = st.date_input("End Date", key="advanced_end_date")
+>>>>>>> 85e4930a49d3ee4443b3597a02297d6fc8ad1a59
         
         # Report-specific parameters
         if report_type == "Sales Analysis":
             st.subheader("Sales Analysis Parameters")
             product_categories = st.multiselect(
                 "Product Categories",
+<<<<<<< HEAD
                 ["All"] + asyncio.run(get_product_categories())
             )
             include_customer_details = st.checkbox("Include Customer Details", value=True)
@@ -351,6 +537,21 @@ def report_generator():
                 "Sales Metrics",
                 ["Revenue", "Units Sold", "Profit Margin", "Average Order Value"],
                 default=["Revenue", "Units Sold"]
+=======
+                ["All"] + asyncio.run(get_product_categories()),
+                key="adv_product_categories"
+            )
+            include_customer_details = st.checkbox(
+                "Include Customer Details", 
+                value=True,
+                key="include_customer_details"
+            )
+            sales_metrics = st.multiselect(
+                "Sales Metrics",
+                ["Revenue", "Units Sold", "Profit Margin", "Average Order Value"],
+                default=["Revenue", "Units Sold"],
+                key="sales_metrics"
+>>>>>>> 85e4930a49d3ee4443b3597a02297d6fc8ad1a59
             )
             
         elif report_type == "Customer Insights":
@@ -358,30 +559,72 @@ def report_generator():
             customer_segments = st.multiselect(
                 "Customer Segments",
                 ["All", "High Value", "Medium Value", "Low Value"],
+<<<<<<< HEAD
                 default=["All"]
             )
             include_demographics = st.checkbox("Include Demographics", value=True)
             include_behavior = st.checkbox("Include Buying Behavior", value=True)
+=======
+                default=["All"],
+                key="customer_segments"
+            )
+            include_demographics = st.checkbox(
+                "Include Demographics", 
+                value=True,
+                key="include_demographics"
+            )
+            include_behavior = st.checkbox(
+                "Include Buying Behavior", 
+                value=True,
+                key="include_behavior"
+            )
+>>>>>>> 85e4930a49d3ee4443b3597a02297d6fc8ad1a59
             
         elif report_type == "Inventory Status":
             st.subheader("Inventory Parameters")
             warehouse_locations = st.multiselect(
                 "Warehouse Locations",
+<<<<<<< HEAD
                 ["All"] + asyncio.run(get_warehouse_locations())
             )
             include_reorder = st.checkbox("Include Reorder Suggestions", value=True)
             include_trends = st.checkbox("Include Historical Trends", value=True)
+=======
+                ["All"] + asyncio.run(get_warehouse_locations()),
+                key="warehouse_locations"
+            )
+            include_reorder = st.checkbox(
+                "Include Reorder Suggestions", 
+                value=True,
+                key="include_reorder"
+            )
+            include_trends = st.checkbox(
+                "Include Historical Trends", 
+                value=True,
+                key="include_trends"
+            )
+>>>>>>> 85e4930a49d3ee4443b3597a02297d6fc8ad1a59
             
         elif report_type == "Financial Performance":
             st.subheader("Financial Parameters")
             metrics = st.multiselect(
                 "Financial Metrics",
                 ["Revenue", "Costs", "Profit", "ROI", "Margins"],
+<<<<<<< HEAD
                 default=["Revenue", "Profit"]
             )
             comparison_period = st.selectbox(
                 "Compare With",
                 ["Previous Period", "Same Period Last Year", "None"]
+=======
+                default=["Revenue", "Profit"],
+                key="financial_metrics"
+            )
+            comparison_period = st.selectbox(
+                "Compare With",
+                ["Previous Period", "Same Period Last Year", "None"],
+                key="comparison_period"
+>>>>>>> 85e4930a49d3ee4443b3597a02297d6fc8ad1a59
             )
         
         # Common options
@@ -393,10 +636,18 @@ def report_generator():
         with col2:
             output_format = st.selectbox(
                 "Output Format",
+<<<<<<< HEAD
                 ["Interactive Dashboard", "PDF Report", "Excel Spreadsheet", "HTML Report"]
             )
         
         if st.button("Generate Report", type="primary"):
+=======
+                ["Interactive Dashboard", "PDF Report", "Excel Spreadsheet", "HTML Report"],
+                key="adv_output_format"
+            )
+        
+        if st.button("Generate Report", type="primary", key="adv_generate_report_btn"):
+>>>>>>> 85e4930a49d3ee4443b3597a02297d6fc8ad1a59
             try:
                 with st.spinner("Generating your report..."):
                     # Build parameters based on report type
@@ -495,12 +746,18 @@ def data_visualization():
     # Visualization type selection
     viz_type = st.selectbox(
         "Visualization Type",
+<<<<<<< HEAD
         ["Sales Trends", "Product Performance", "Customer Segments", "Geographic Analysis"]
+=======
+        ["Sales Trends", "Product Performance", "Customer Segments", "Geographic Analysis"],
+        key="viz_type"  # Add unique key
+>>>>>>> 85e4930a49d3ee4443b3597a02297d6fc8ad1a59
     )
     
     # Time period selection
     col1, col2 = st.columns(2)
     with col1:
+<<<<<<< HEAD
         start_date = st.date_input("Start Date")
     with col2:
         end_date = st.date_input("End Date")
@@ -520,6 +777,47 @@ def data_visualization():
         metric = st.selectbox("Metric", ["Sales", "Customers", "Orders"])
     
     if st.button("Generate Visualization"):
+=======
+        start_date = st.date_input("Start Date", key="viz_start_date")
+    with col2:
+        end_date = st.date_input("End Date", key="viz_end_date")
+    
+    # Visualization-specific parameters
+    if viz_type == "Sales Trends":
+        grouping = st.selectbox(
+            "Group By", 
+            ["Day", "Week", "Month", "Quarter", "Year"],
+            key="sales_grouping"  # Add unique key
+        )
+        include_forecast = st.checkbox("Include Forecast", value=False, key="include_forecast")
+    elif viz_type == "Product Performance":
+        metric = st.selectbox(
+            "Metric", 
+            ["Revenue", "Units Sold", "Profit Margin"],
+            key="product_metric"  # Add unique key
+        )
+        top_n = st.slider("Top N Products", 5, 50, 10, key="top_n_products")
+    elif viz_type == "Customer Segments":
+        segment_by = st.selectbox(
+            "Segment By", 
+            ["Purchase Frequency", "Average Order Value", "Customer Lifetime Value"],
+            key="segment_by"
+        )
+        n_segments = st.slider("Number of Segments", 2, 10, 5)
+    elif viz_type == "Geographic Analysis":
+        region_level = st.selectbox(
+            "Region Level", 
+            ["Country", "State/Province", "City"],
+            key="region_level"
+        )
+        metric = st.selectbox(
+            "Metric", 
+            ["Sales", "Customers", "Orders"],
+            key="geo_metric"
+        )
+    
+    if st.button("Generate Visualization", key="generate_viz_btn"):
+>>>>>>> 85e4930a49d3ee4443b3597a02297d6fc8ad1a59
         result = asyncio.run(
             st.session_state.orchestrator.process({
                 "workflow": "data_visualization",
@@ -550,5 +848,27 @@ def data_visualization():
         else:
             st.error(f"Failed to generate visualization: {result.get('error')}")
 
+<<<<<<< HEAD
+=======
+def schema_configuration():
+    st.header("Schema Configuration")
+    
+    if "schema_configurator" not in st.session_state:
+        st.session_state.schema_configurator = SchemaConfigurator(
+            st.session_state.orchestrator.agents["database"]
+        )
+    
+    try:
+        config = asyncio.run(st.session_state.schema_configurator.configure_schema())
+        
+        # Update session state config
+        if config:
+            st.session_state.config['database']['schema_mapping'] = config
+            st.success("Schema configuration updated successfully!")
+            
+    except Exception as e:
+        st.error(f"Error configuring schema: {str(e)}")
+
+>>>>>>> 85e4930a49d3ee4443b3597a02297d6fc8ad1a59
 if __name__ == "__main__":
     main() 

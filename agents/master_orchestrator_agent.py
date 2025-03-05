@@ -14,13 +14,20 @@ from .assistant_agent import AssistantAgent
 class MasterOrchestratorAgent(BaseAgent):
     """Agent responsible for coordinating all other agents."""
     
+<<<<<<< HEAD
     def __init__(self, config: Dict[str, Any], output_dir: str, openai_api_key: str):
         """Initialize the orchestrator."""
         super().__init__(config)
+=======
+    def __init__(self, config: Dict[str, Any]):
+        """Initialize with configuration."""
+        super().__init__("master_orchestrator_agent")
+>>>>>>> 85e4930a49d3ee4443b3597a02297d6fc8ad1a59
         self.config = config
         self.output_dir = Path(output_dir)
         self.openai_api_key = openai_api_key
         
+<<<<<<< HEAD
         # Initialize sub-agents
         self.assistant = AssistantAgent(config.get("assistant", {}))
         self.data_manager = DataManagerAgent(config.get("data_manager", {}))
@@ -31,12 +38,26 @@ class MasterOrchestratorAgent(BaseAgent):
         self.agents = {
             "database": DatabaseAgent(config["database"]),
             "user_interface": UserInterfaceAgent(config["user_interface"]),
+=======
+        # Initialize agent instances
+        self.agents = {
+            "database": DatabaseAgent(config["database"]),
+            "data_manager": DataManagerAgent(config["data_manager"]),
+            "user_interface": UserInterfaceAgent(config["user_interface"]),
+            "report_generator": ReportGeneratorAgent(
+                config=config["report_generator"]["config"],
+                output_dir=config["report_generator"]["output_dir"],
+                openai_api_key=config["report_generator"]["openai_api_key"]
+            ),
+            "insight_generator": InsightGeneratorAgent(config["insight_generator"])
+>>>>>>> 85e4930a49d3ee4443b3597a02297d6fc8ad1a59
         }
         self.workflow_history = []
     
     async def initialize(self) -> bool:
         """Initialize the master orchestrator and all sub-agents."""
         try:
+<<<<<<< HEAD
             # Create output directory
             self.output_dir.mkdir(parents=True, exist_ok=True)
             
@@ -50,11 +71,41 @@ class MasterOrchestratorAgent(BaseAgent):
             
             results = await asyncio.gather(*init_tasks)
             return all(results)
+=======
+            self.logger.info("Initializing database agent...")
+            if not await self.agents["database"].initialize():
+                self.logger.error("Failed to initialize database agent")
+                return False
+            
+            self.logger.info("Initializing data manager agent...")
+            if not await self.agents["data_manager"].initialize():
+                self.logger.error("Failed to initialize data manager agent")
+                return False
+            
+            self.logger.info("Initializing user interface agent...")
+            if not await self.agents["user_interface"].initialize():
+                self.logger.error("Failed to initialize user interface agent")
+                return False
+            
+            self.logger.info("Initializing report generator agent...")
+            if not await self.agents["report_generator"].initialize():
+                self.logger.error("Failed to initialize report generator agent")
+                return False
+            
+            self.logger.info("Initializing insight generator agent...")
+            if not await self.agents["insight_generator"].initialize():
+                self.logger.error("Failed to initialize insight generator agent")
+                return False
+            
+            self.logger.info("All agents initialized successfully")
+            return True
+>>>>>>> 85e4930a49d3ee4443b3597a02297d6fc8ad1a59
             
         except Exception as e:
-            self.logger.error(f"Error initializing master orchestrator: {str(e)}")
+            self.logger.error(f"Error in master orchestrator initialization: {str(e)}")
             return False
     
+<<<<<<< HEAD
     async def process(self, request: Dict[str, Any]) -> Dict[str, Any]:
         """Process requests by coordinating between sub-agents."""
         try:
@@ -77,6 +128,19 @@ class MasterOrchestratorAgent(BaseAgent):
         except Exception as e:
             self.logger.error(f"Error processing request: {str(e)}")
             return {"success": False, "error": str(e)}
+=======
+    async def process(self, input_data: Dict[str, Any]) -> Dict[str, Any]:
+        """Process workflow requests."""
+        try:
+            workflow = input_data.get("workflow")
+            if not workflow:
+                raise ValueError("Workflow not specified")
+
+            result = await getattr(self, f"_handle_{workflow}")(input_data)
+            return result
+        except Exception as e:
+            return await self._handle_agent_error("master_orchestrator", e)
+>>>>>>> 85e4930a49d3ee4443b3597a02297d6fc8ad1a59
     
     async def cleanup(self) -> bool:
         """Clean up all agents."""
@@ -404,7 +468,11 @@ class MasterOrchestratorAgent(BaseAgent):
             "success": False,
             "error": f"{agent_name} error: {str(error)}",
             "agent": agent_name
+<<<<<<< HEAD
         }
 
 # Make sure the class is exported
 __all__ = ['MasterOrchestratorAgent'] 
+=======
+        } 
+>>>>>>> 85e4930a49d3ee4443b3597a02297d6fc8ad1a59
