@@ -222,95 +222,30 @@ FEATURES = {
 # LLM Configuration
 LLM_CONFIG = {
     "providers": {
-        "openai": {
-            "models": {
-                "gpt-4": {
-                    "max_tokens": 8192,
-                    "cost_per_1k_tokens": 0.03,
-                    "max_parallel_requests": 5
-                },
-                "gpt-3.5-turbo": {
-                    "max_tokens": 4096,
-                    "cost_per_1k_tokens": 0.002,
-                    "max_parallel_requests": 10
-                }
-            },
-            "default_model": "gpt-3.5-turbo",
-            "api_base": "https://api.openai.com/v1"
-        },
         "anthropic": {
             "models": {
+                "claude-3-sonnet-20240229": {
+                    "max_tokens": 100000,
+                    "cost_per_1k_tokens": 0.015,
+                    "max_parallel_requests": 5
+                },
                 "claude-2": {
                     "max_tokens": 100000,
                     "cost_per_1k_tokens": 0.01,
                     "max_parallel_requests": 5
-                },
-                "claude-instant": {
-                    "max_tokens": 100000,
-                    "cost_per_1k_tokens": 0.002,
-                    "max_parallel_requests": 10
                 }
             },
-            "default_model": "claude-instant",
-            "api_base": "https://api.anthropic.com"
-        },
-        "azure_openai": {
-            "models": {
-                "gpt-4": {
-                    "max_tokens": 8192,
-                    "cost_per_1k_tokens": 0.03,
-                    "max_parallel_requests": 5,
-                    "deployment_name": "gpt4"
-                },
-                "gpt-35-turbo": {
-                    "max_tokens": 4096,
-                    "cost_per_1k_tokens": 0.002,
-                    "max_parallel_requests": 10,
-                    "deployment_name": "gpt35"
-                }
-            },
-            "default_model": "gpt-35-turbo",
-            "api_base": os.getenv("AZURE_OPENAI_ENDPOINT", "")
+            "default_model": "claude-3-sonnet-20240229",
+            "api_base": "https://api.anthropic.com/v1"
         }
     },
-    "default_provider": "openai",
-    "cache": {
-        "enabled": True,
-        "ttl": 3600,  # 1 hour
-        "max_size": 1000,  # Maximum number of cached responses
-        "similarity_threshold": 0.95  # Threshold for semantic similarity cache hits
-    },
-    "optimization": {
-        "batch_requests": True,
-        "max_batch_size": 5,
-        "request_timeout": 30,
-        "retry_attempts": 3,
-        "backoff_factor": 2,
-        "cost_limit_per_day": 10.0,  # Maximum daily cost in USD
-        "token_optimization": {
-            "enabled": True,
-            "compression_threshold": 2000,  # Compress context if above this token count
-            "max_context_tokens": {
-                "summary": 1000,
-                "analysis": 2000,
-                "report": 3000
-            }
-        }
-    },
-    "monitoring": {
-        "enabled": True,
-        "log_level": "INFO",
-        "metrics": {
-            "token_usage": True,
-            "response_time": True,
-            "cost": True,
-            "cache_hits": True
-        },
-        "alerts": {
-            "cost_threshold": 5.0,  # Alert when daily cost exceeds this value
-            "error_threshold": 0.1  # Alert when error rate exceeds 10%
-        }
-    }
+    "default_provider": "anthropic",
+    "cache_enabled": True,
+    "cache_ttl": 3600,  # 1 hour
+    "retry_attempts": 3,
+    "timeout": 60,
+    "temperature": 0.7,
+    "max_tokens_per_request": 4000
 }
 
 # Client-specific configurations

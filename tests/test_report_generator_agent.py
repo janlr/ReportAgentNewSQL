@@ -3,9 +3,10 @@ from pathlib import Path
 import json
 from datetime import datetime
 from typing import Dict, Any
-from unittest.mock import Mock, patch
+from unittest.mock import Mock, patch, MagicMock
 import pandas as pd
 import os
+import numpy as np
 
 from agents.report_generator_agent import ReportGeneratorAgent, ReportTemplate
 
@@ -46,9 +47,18 @@ def report_generator():
     }
     return ReportGeneratorAgent(
         config=config,
-        output_dir="./test_reports",
-        openai_api_key="test_key"
+        output_dir="./reports",
+        anthropic_api_key="test_key"
     )
+
+@pytest.fixture
+def sample_data():
+    return pd.DataFrame({
+        "OrderDate": pd.date_range(start="2024-01-01", periods=10),
+        "LineTotal": np.random.uniform(100, 1000, 10),
+        "CategoryName": ["Category A", "Category B"] * 5,
+        "Territory": ["North", "South", "East", "West"] * 3
+    })
 
 class TestNaturalLanguageProcessing:
     """Test cases for natural language prompt parsing."""
@@ -271,6 +281,40 @@ async def test_process_invalid_input(report_generator):
 async def test_cleanup(report_generator):
     success = await report_generator.cleanup()
     assert success == True
+
+@patch('anthropic.Client')
+@pytest.mark.asyncio
+async def test_generate_insights(mock_anthropic, report_generator, sample_data):
+    # Setup mock response
+    mock_client = MagicMock()
+    mock_client.generate_content.return_value.text = "Test insights"
+    mock_anthropic.return_value = mock_client
+    
+    # Test insights generation
+    parameters = {"report_type": "Sales Analysis"}
+    data_tables = {"sales_data": sample_data}
+    
+    insights = await report_generator._generate_insights(data_tables, parameters)
+    
+    assert insights == "Test insights"
+    mock_client.generate_content.assert_called_once()
+
+@patch('anthropic.Client')
+@pytest.mark.asyncio
+async def test_generate_summary(mock_anthropic, report_generator, sample_data):
+    # Setup mock response
+    mock_client = MagicMock()
+    mock_client.generate_content.return_value.text = "Test summary"
+    mock_anthropic.return_value = mock_client
+    
+    # Test summary generation
+    parameters = {"report_type": "Sales Analysis"}
+    data_tables = {"sales_data": sample_data}
+    
+    summary = await report_generator._generate_summary(data_tables, parameters)
+    
+    assert summary == "Test summary"
+    mock_client.generate_content.assert_called_once()
 
 if __name__ == "__main__":
     pytest.main([__file__]) 

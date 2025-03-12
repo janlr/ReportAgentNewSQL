@@ -7,25 +7,18 @@ from datetime import datetime
 from .base_agent import BaseAgent
 import plotly.express as px
 import plotly.graph_objects as go
-<<<<<<< HEAD
-=======
 import os
->>>>>>> 85e4930a49d3ee4443b3597a02297d6fc8ad1a59
 
 class UserInterfaceAgent(BaseAgent):
     """Agent responsible for user interface interactions and rendering."""
     
     def __init__(self, config: Dict[str, Any]):
         """Initialize with configuration."""
-<<<<<<< HEAD
-        super().__init__(config)
-        self.required_config = ["preferences_dir"]
-=======
         super().__init__("user_interface_agent")
         self.config = config
+        self.required_config = ["preferences_dir"]
         
         # Set up preferences directory
->>>>>>> 85e4930a49d3ee4443b3597a02297d6fc8ad1a59
         self.preferences_dir = Path(config.get("preferences_dir", "./preferences"))
         
         # Initialize session data
@@ -72,27 +65,13 @@ class UserInterfaceAgent(BaseAgent):
             self.logger.error(f"Error saving preferences: {str(e)}")
     
     async def initialize(self) -> bool:
-<<<<<<< HEAD
-        """Initialize user interface agent."""
+        """Initialize user interface resources."""
         if not self.validate_config(self.required_config):
             return False
             
-        # Create preferences directory
-        self.preferences_dir.mkdir(parents=True, exist_ok=True)
-        return True
-    
-    async def cleanup(self) -> bool:
-        """Clean up user interface resources."""
         try:
-            # Clean up any resources
-            self._save_preferences()
-            self.logger.info("User interface agent cleaned up successfully")
-            return True
-        except Exception as e:
-=======
-        """Initialize user interface resources."""
-        try:
-            # Set up any required resources
+            # Create preferences directory
+            self.preferences_dir.mkdir(parents=True, exist_ok=True)
             self.logger.info("User interface agent initialized successfully")
             return True
         except Exception as e:
@@ -107,17 +86,16 @@ class UserInterfaceAgent(BaseAgent):
             self.logger.info("User interface agent cleaned up successfully")
             return True
         except Exception as e:
->>>>>>> 85e4930a49d3ee4443b3597a02297d6fc8ad1a59
             self.logger.error(f"Error cleaning up user interface agent: {str(e)}")
             return False
     
     async def process(self, request: Dict[str, Any]) -> Dict[str, Any]:
         """Process user interface requests."""
         try:
-<<<<<<< HEAD
+            if not self.validate_input(request, ["action"]):
+                raise ValueError("Missing required field: action")
+            
             action = request.get("action")
-            if not action:
-                return {"success": False, "error": "No action specified"}
             
             if action == "get_preferences":
                 return await self._get_preferences()
@@ -126,16 +104,6 @@ class UserInterfaceAgent(BaseAgent):
             elif action == "render_page":
                 page = request.get("page")
                 components = request.get("components", [])
-=======
-            if not self.validate_input(input_data, ["action"]):
-                raise ValueError("Missing required field: action")
-            
-            action = input_data["action"]
-            
-            if action == "render_page":
-                page = input_data.get("page")
-                components = input_data.get("components", [])
->>>>>>> 85e4930a49d3ee4443b3597a02297d6fc8ad1a59
                 
                 if not page:
                     raise ValueError("Page title is required for render_page action")
@@ -147,15 +115,9 @@ class UserInterfaceAgent(BaseAgent):
                 }
                 
             elif action == "create_visualization":
-<<<<<<< HEAD
                 data = request.get("data")
                 viz_type = request.get("viz_type")
                 parameters = request.get("parameters", {})
-=======
-                data = input_data.get("data")
-                viz_type = input_data.get("viz_type")
-                parameters = input_data.get("parameters", {})
->>>>>>> 85e4930a49d3ee4443b3597a02297d6fc8ad1a59
                 
                 if not data or not viz_type:
                     raise ValueError("Data and visualization type are required")
@@ -184,14 +146,8 @@ class UserInterfaceAgent(BaseAgent):
                 return {"success": False, "error": f"Unknown action: {action}"}
                 
         except Exception as e:
-<<<<<<< HEAD
             self.logger.error(f"Error processing UI request: {str(e)}")
             return {"success": False, "error": str(e)}
-=======
-            return await self.handle_error(e, {
-                "action": input_data.get("action")
-            })
->>>>>>> 85e4930a49d3ee4443b3597a02297d6fc8ad1a59
     
     def _render_page(self, page_title: str, components: List[Dict[str, Any]]) -> Dict[str, Any]:
         """Render a page with the given components."""

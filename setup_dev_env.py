@@ -66,10 +66,11 @@ def setup_dev_config():
             }
         },
         "llm": {
-            "provider": "openai",
-            "model": "gpt-3.5-turbo",
+            "provider": "anthropic",
+            "model": "claude-3-sonnet-20240229",
             "temperature": 0.7,
-            "max_tokens": 1000
+            "max_tokens": 1000,
+            "api_key": os.getenv("ANTHROPIC_API_KEY")
         },
         "cache": {
             "type": "local",
@@ -144,6 +145,23 @@ def setup_vscode():
         json.dump(launch, f, indent=2)
     
     logging.info("VSCode configuration created")
+
+def setup_llm_config():
+    """Configure LLM settings."""
+    config = {
+        "provider": "anthropic",
+        "model": "claude-3-sonnet-20240229",
+        "temperature": 0.7,
+        "max_tokens": 1000,
+        "api_key": os.getenv("ANTHROPIC_API_KEY")
+    }
+    
+    # Validate API key
+    if not config["api_key"]:
+        print("Warning: ANTHROPIC_API_KEY not found in environment variables")
+        config["api_key"] = "dummy_key_for_testing"
+    
+    return config
 
 def main():
     """Main setup function"""

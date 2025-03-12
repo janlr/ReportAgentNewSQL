@@ -1,5 +1,4 @@
 from typing import Dict, Any, List, Optional
-<<<<<<< HEAD
 from pathlib import Path
 import logging
 import json
@@ -10,34 +9,16 @@ from datetime import datetime
 from scipy import stats
 from .base_agent import BaseAgent
 from .llm_manager_agent import LLMManagerAgent
-=======
-from .base_agent import BaseAgent
-from .llm_manager_agent import LLMManagerAgent
-import pandas as pd
-import numpy as np
-from datetime import datetime
-import logging
-import json
-from pathlib import Path
-from scipy import stats
-import openai
->>>>>>> 85e4930a49d3ee4443b3597a02297d6fc8ad1a59
+from autogen import Agent
 
 class InsightGeneratorAgent(BaseAgent):
     """Agent responsible for generating insights and summaries using LLM."""
     
     def __init__(self, config: Dict[str, Any]):
         """Initialize with configuration."""
-<<<<<<< HEAD
         super().__init__(config)
         self.required_config = ["llm_manager", "cache_dir"]
         self.cache_dir = Path(config.get("cache_dir", "./cache/insights"))
-=======
-        super().__init__("insight_generator")
-        self.config = config
-        self.cache_dir = Path(config.get("cache_dir", "./cache/insights"))
-        self.cache_dir.mkdir(parents=True, exist_ok=True)
->>>>>>> 85e4930a49d3ee4443b3597a02297d6fc8ad1a59
         
         # Validate LLM manager configuration
         if "llm_manager" not in config:
@@ -51,7 +32,6 @@ class InsightGeneratorAgent(BaseAgent):
         self.llm_manager = LLMManagerAgent(self.llm_config)
             
     async def initialize(self) -> bool:
-<<<<<<< HEAD
         """Initialize the insight generator agent."""
         if not self.validate_config(self.required_config):
             return False
@@ -136,52 +116,6 @@ class InsightGeneratorAgent(BaseAgent):
             categorical_cols = df.select_dtypes(include=['object', 'category']).columns
             date_cols = df.select_dtypes(include=['datetime64']).columns
             
-=======
-        """Initialize insight generator resources."""
-        try:
-            openai.api_key = self.config["llm_manager"]["api_key"]
-            return True
-        except Exception as e:
-            self.logger.error(f"Error initializing insight generator: {str(e)}")
-            return False
-    
-    async def cleanup(self) -> bool:
-        """Clean up insight generator resources."""
-        try:
-            return True
-        except Exception as e:
-            self.logger.error(f"Error cleaning up insight generator: {str(e)}")
-            return False
-    
-    async def process(self, input_data: Dict[str, Any]) -> Dict[str, Any]:
-        """Process insight generation requests."""
-        try:
-            if not self.validate_input(input_data, ["action", "data"]):
-                raise ValueError("Missing required fields")
-            
-            # Process insights
-            return {"success": True, "data": {}}
-            
-        except Exception as e:
-            return {"success": False, "error": str(e)}
-    
-    def _generate_summary(self, df: pd.DataFrame, metadata: Dict[str, Any]) -> Dict[str, Any]:
-        """Generate a summary of the data with insights."""
-        try:
-            summary = {
-                "summary": "",
-                "findings": "",
-                "recommendations": ""
-            }
-            
-            # Basic statistics
-            num_rows = len(df)
-            num_cols = len(df.columns)
-            numeric_cols = df.select_dtypes(include=[np.number]).columns
-            categorical_cols = df.select_dtypes(include=['object', 'category']).columns
-            date_cols = df.select_dtypes(include=['datetime64']).columns
-            
->>>>>>> 85e4930a49d3ee4443b3597a02297d6fc8ad1a59
             # Generate summary text
             summary["summary"] = f"""
             Dataset Overview:
@@ -469,4 +403,17 @@ class InsightGeneratorAgent(BaseAgent):
         return any(
             str(dtype).startswith(("datetime", "timestamp"))
             for dtype in data.dtypes
-        ) 
+        )
+
+class MasterOrchestratorAgent:
+    def __init__(self):
+        self.name = "Master Orchestrator"
+        # other initialization code
+    
+    def coordinate_workflow(self):
+        # workflow coordination code
+        pass
+
+    def handle_errors(self):
+        # error handling code
+        pass 

@@ -2,7 +2,7 @@ import pytest
 import pandas as pd
 import numpy as np
 from pathlib import Path
-from unittest.mock import Mock, patch
+from unittest.mock import Mock, patch, MagicMock
 from datetime import datetime, timedelta
 
 from agents.insight_generator_agent import InsightGeneratorAgent
@@ -10,11 +10,10 @@ from agents.insight_generator_agent import InsightGeneratorAgent
 @pytest.fixture
 def sample_data():
     return pd.DataFrame({
-        'date': pd.date_range(start='2023-01-01', periods=100),
-        'sales': np.random.normal(1000, 100, 100),
-        'customers': np.random.normal(50, 10, 100),
-        'category': np.random.choice(['A', 'B', 'C'], 100),
-        'region': np.random.choice(['North', 'South', 'East', 'West'], 100)
+        "OrderDate": pd.date_range(start="2024-01-01", periods=10),
+        "LineTotal": np.random.uniform(100, 1000, 10),
+        "CategoryName": ["Category A", "Category B"] * 5,
+        "Territory": ["North", "South", "East", "West"] * 3
     })
 
 @pytest.fixture
@@ -31,6 +30,17 @@ def sample_config():
 @pytest.fixture
 def agent(sample_config):
     return InsightGeneratorAgent(sample_config)
+
+@pytest.fixture
+def insight_generator():
+    config = {
+        "provider": "anthropic",
+        "model": "claude-3-sonnet-20240229",
+        "temperature": 0.7,
+        "max_tokens": 1000,
+        "api_key": "test_key"
+    }
+    return InsightGeneratorAgent(config)
 
 class TestInsightGeneration:
     """Test cases for generating insights from data."""
@@ -129,16 +139,12 @@ class TestInsightCaching:
 class TestLLMIntegration:
     """Test cases for LLM integration in insight generation."""
     
-    @patch('openai.ChatCompletion.create')
-    def test_llm_prompt_generation(self, mock_create, agent, sample_data):
+    @patch('anthropic.Client')
+    def test_llm_prompt_generation(self, mock_anthropic, agent, sample_data):
         """Test generation of LLM prompts for insights."""
-        mock_create.return_value = {
-            'choices': [{
-                'message': {
-                    'content': 'Test insight summary'
-                }
-            }]
-        }
+        mock_client = MagicMock()
+        mock_client.generate_content.return_value.text = "Test insight summary"
+        mock_anthropic.return_value = mock_client
         
         summary = agent.generate_summary(
             data=sample_data,
@@ -148,12 +154,14 @@ class TestLLMIntegration:
         
         assert isinstance(summary, str)
         assert len(summary) > 0
-        mock_create.assert_called_once()
+        mock_client.generate_content.assert_called_once()
     
-    @patch('openai.ChatCompletion.create')
-    def test_llm_error_handling(self, mock_create, agent, sample_data):
+    @patch('anthropic.Client')
+    def test_llm_error_handling(self, mock_anthropic, agent, sample_data):
         """Test handling of LLM errors during insight generation."""
-        mock_create.side_effect = Exception("API Error")
+        mock_client = MagicMock()
+        mock_client.generate_content.side_effect = Exception("API Error")
+        mock_anthropic.return_value = mock_client
         
         summary = agent.generate_summary(
             data=sample_data,
@@ -222,6 +230,50 @@ class TestInsightFormatting:
         assert isinstance(recommendations, list)
         assert len(recommendations) > 0
         assert all(isinstance(r, str) for r in recommendations)
+
+@pytest.mark.asyncio
+@patch('anthropic.Client')
+async def test_generate_insights(mock_anthropic, insight_generator, sample_data):
+    # Setup mock response
+    mock_client = MagicMock()
+    mock_client.generate_content.return_value.text = "Test insights"
+    mock_anthropic.return_value = mock_client
+    
+    # Test insights generation
+    result = await insight_generator.process({
+        "action": "generate_insights",
+        "data": sample_data,
+        "metadata": {
+            "report_type": "Sales Analysis",
+            "parameters": {}
+        }
+    })
+    
+    assert result["success"] == True
+    assert "insights" in result["data"]
+    mock_client.generate_content.assert_called_once()
+
+@pytest.mark.asyncio
+@patch('anthropic.Client')
+async def test_generate_summary(mock_anthropic, insight_generator, sample_data):
+    # Setup mock response
+    mock_client = MagicMock()
+    mock_client.generate_content.return_value.text = "Test summary"
+    mock_anthropic.return_value = mock_client
+    
+    # Test summary generation
+    result = await insight_generator.process({
+        "action": "generate_summary",
+        "data": sample_data,
+        "metadata": {
+            "report_type": "Sales Analysis",
+            "parameters": {}
+        }
+    })
+    
+    assert result["success"] == True
+    assert "summary" in result["data"]
+    mock_client.generate_content.assert_called_once()
 
 if __name__ == "__main__":
     pytest.main([__file__]) 

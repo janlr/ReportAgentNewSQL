@@ -8,10 +8,7 @@ from pathlib import Path
 import hashlib
 import os
 from tenacity import retry, stop_after_attempt, wait_exponential
-<<<<<<< HEAD
 from .base_agent import BaseAgent
-=======
->>>>>>> 85e4930a49d3ee4443b3597a02297d6fc8ad1a59
 
 # Optional prometheus import
 try:
@@ -20,27 +17,20 @@ try:
 except ImportError:
     PROMETHEUS_AVAILABLE = False
 
-<<<<<<< HEAD
 class LLMManagerAgent(BaseAgent):
     """Agent responsible for managing LLM interactions."""
     
     def __init__(self, config: Dict[str, Any]):
         """Initialize with configuration."""
-        super().__init__(config)
+        super().__init__("llm_manager_agent")
+        self.config = config
         self.required_config = ["provider", "model"]
         
-        # Set up OpenAI API key if using OpenAI
-        if config["provider"].lower() == "openai":
-            openai.api_key = config.get("api_key")
+        # Set up Anthropic API key if using Anthropic
+        if config["provider"].lower() == "anthropic":
+            self.client = anthropic.Client(api_key=config.get("api_key"))
         
-=======
-class LLMManagerAgent:
-    """Manages LLM providers, caching, and optimization."""
-    
-    def __init__(self, config: Dict[str, Any]):
-        self.config = config
->>>>>>> 85e4930a49d3ee4443b3597a02297d6fc8ad1a59
-        self.active_provider = config.get("default_provider", "openai")
+        self.active_provider = config.get("default_provider", "anthropic")
         self.cache_dir = Path(config.get("cache_dir", "./cache/llm"))
         self.cache_dir.mkdir(parents=True, exist_ok=True)
         
@@ -65,67 +55,27 @@ class LLMManagerAgent:
     def _setup_clients(self):
         """Initialize API clients."""
         providers_config = {
-            "openai": self._setup_openai,
-            "anthropic": self._setup_anthropic,
-            "azure_openai": self._setup_azure_openai
+            "anthropic": self._setup_anthropic
         }
         
         for provider, setup_func in providers_config.items():
             if provider in self.config:
                 setup_func()
     
-    def _setup_openai(self):
-        """Setup OpenAI client."""
-        if api_key := self.config["openai"].get("api_key"):
-            openai.api_key = api_key
-        else:
-            self.logger.warning("OpenAI API key not provided")
-    
     def _setup_anthropic(self):
         """Setup Anthropic client."""
         if api_key := self.config["anthropic"].get("api_key"):
-            self.anthropic_client = anthropic.Client(api_key=api_key)
+            self.client = anthropic.Client(api_key=api_key)
         else:
             self.logger.warning("Anthropic API key not provided")
     
-    def _setup_azure_openai(self):
-        """Setup Azure OpenAI client."""
-        config = self.config["azure_openai"]
-        if all(key in config for key in ["api_key", "api_base", "api_version"]):
-            openai.api_type = "azure"
-            openai.api_base = config["api_base"]
-            openai.api_version = config["api_version"]
-            openai.api_key = config["api_key"]
-        else:
-            self.logger.warning("Azure OpenAI configuration incomplete")
-
     async def _generate_provider_response(self, provider: str, model: str, prompt: str, max_tokens: int) -> tuple[str, int]:
         """Generate response from specific provider."""
-        if provider == "openai":
-            response = await openai.ChatCompletion.acreate(
-                model=model,
-                messages=[{"role": "user", "content": prompt}],
-                max_tokens=max_tokens
-            )
-            return response.choices[0].message.content, response.usage.total_tokens
-            
-        elif provider == "anthropic":
-            response = await self.anthropic_client.completion.create(
-                model=model,
-                prompt=f"\n\nHuman: {prompt}\n\nAssistant:",
-                max_tokens_to_sample=max_tokens
-            )
+        if provider == "anthropic":
+            response = await self.client.generate_content(prompt, max_tokens=max_tokens)
             # Approximate token count for Anthropic
-            return response.completion, len(prompt.split()) + len(response.completion.split())
+            return response.text, len(prompt.split()) + len(response.text.split())
             
-        elif provider == "azure_openai":
-            response = await openai.ChatCompletion.acreate(
-                engine=self.config["azure_openai"]["models"][model]["deployment_name"],
-                messages=[{"role": "user", "content": prompt}],
-                max_tokens=max_tokens
-            )
-            return response.choices[0].message.content, response.usage.total_tokens
-        
         raise ValueError(f"Unsupported provider: {provider}")
 
     async def _handle_cache_hit(self, cache_file: Path, provider: str, model: str) -> Optional[str]:
@@ -269,23 +219,11 @@ class LLMManagerAgent:
             )
         }
     
-<<<<<<< HEAD
-=======
-    def _setup_logging(self):
-        """Initialize logging."""
-        self.logger = logging.getLogger("llm_manager")
-        self.logger.setLevel(logging.INFO)
-    
->>>>>>> 85e4930a49d3ee4443b3597a02297d6fc8ad1a59
     def get_available_providers(self) -> List[str]:
         """Get list of available LLM providers."""
         providers = []
-        if "openai" in self.config:
-            providers.append("openai")
         if "anthropic" in self.config:
             providers.append("anthropic")
-        if "azure_openai" in self.config:
-            providers.append("azure_openai")
         return providers
     
     def get_available_models(self, provider: str) -> List[str]:
@@ -342,63 +280,11 @@ class LLMManagerAgent:
             raise Exception("Daily cost limit exceeded")
     
     async def initialize(self) -> bool:
-<<<<<<< HEAD
-        """Initialize LLM manager."""
-        if not self.validate_config(self.required_config):
-            return False
-        return True
-    
-    async def process(self, request: Dict[str, Any]) -> Dict[str, Any]:
-        """Process LLM-related requests."""
-        try:
-            action = request.get("action")
-            if not action:
-                return {"success": False, "error": "No action specified"}
-            
-            if action == "generate_text":
-                return await self._generate_text(request.get("parameters", {}))
-            elif action == "analyze_text":
-                return await self._analyze_text(request.get("parameters", {}))
-            else:
-                return {"success": False, "error": f"Unknown action: {action}"}
-                
-        except Exception as e:
-            self.logger.error(f"Error processing LLM request: {str(e)}")
-            return {"success": False, "error": str(e)}
-    
-    async def _generate_text(self, parameters: Dict[str, Any]) -> Dict[str, Any]:
-        """Generate text using LLM."""
-        # TODO: Implement actual text generation
-        return {
-            "success": True,
-            "data": {
-                "text": "Generated text placeholder"
-            }
-        }
-    
-    async def _analyze_text(self, parameters: Dict[str, Any]) -> Dict[str, Any]:
-        """Analyze text using LLM."""
-        # TODO: Implement actual text analysis
-        return {
-            "success": True,
-            "data": {
-                "analysis": "Text analysis placeholder"
-            }
-        }
-=======
         """Initialize the LLM manager agent."""
         try:
             # Verify API keys are present
-            if "openai" in self.config and not self.config["openai"].get("api_key"):
-                self.logger.error("OpenAI API key not provided")
-                return False
-                
             if "anthropic" in self.config and not self.config["anthropic"].get("api_key"):
                 self.logger.error("Anthropic API key not provided")
-                return False
-                
-            if "azure_openai" in self.config and not self.config["azure_openai"].get("api_key"):
-                self.logger.error("Azure OpenAI API key not provided")
                 return False
             
             # Test connection to active provider
@@ -433,7 +319,6 @@ class LLMManagerAgent:
         except Exception as e:
             self.logger.error(f"Error cleaning up LLM manager: {str(e)}")
             return False
->>>>>>> 85e4930a49d3ee4443b3597a02297d6fc8ad1a59
 
     def _update_metrics(self, metric_name: str, labels: Dict[str, str], value: float = 1):
         """Update metrics if monitoring is enabled."""

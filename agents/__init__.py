@@ -4,14 +4,13 @@ __version__ = "0.1.0"
 
 # Import base agent first
 from .base_agent import BaseAgent
-<<<<<<< HEAD
-=======
 from .database_agent import DatabaseAgent
 from .data_manager_agent import DataManagerAgent
 from .user_interface_agent import UserInterfaceAgent
 from .report_generator_agent import ReportGeneratorAgent
 from .insight_generator_agent import InsightGeneratorAgent
 from .master_orchestrator_agent import MasterOrchestratorAgent
+from .assistant_agent import AssistantAgent
 
 import os
 from dotenv import load_dotenv
@@ -31,10 +30,9 @@ def initialize_environment():
                 'host': os.getenv('DB_HOST'),
                 'port': int(os.getenv('DB_PORT', 1433)),
                 'database': os.getenv('DB_NAME'),
-                'user': os.getenv('DB_USER'),
-                'password': os.getenv('DB_PASSWORD'),
                 'driver': os.getenv('DB_DRIVER'),
                 'echo': os.getenv('DB_ECHO', 'True').lower() == 'true',
+                'trusted_connection': os.getenv('DB_TRUSTED_CONNECTION', 'yes'),
                 'cache_dir': './cache',
                 'schema_mapping': {
                     'sales': {
@@ -204,7 +202,6 @@ def get_config(key: str = None):
     if key is None:
         return st.session_state.config
     return st.session_state.config.get(key)
->>>>>>> 85e4930a49d3ee4443b3597a02297d6fc8ad1a59
 
 # Define exports
 __all__ = [
@@ -214,39 +211,8 @@ __all__ = [
     'UserInterfaceAgent',
     'ReportGeneratorAgent',
     'InsightGeneratorAgent',
-<<<<<<< HEAD
     'AssistantAgent',
-    'MasterOrchestratorAgent'
-]
-
-# Lazy imports to avoid circular dependencies
-def __getattr__(name):
-    if name in __all__:
-        if name == 'DatabaseAgent':
-            from .database_agent import DatabaseAgent
-            return DatabaseAgent
-        elif name == 'DataManagerAgent':
-            from .data_manager_agent import DataManagerAgent
-            return DataManagerAgent
-        elif name == 'UserInterfaceAgent':
-            from .user_interface_agent import UserInterfaceAgent
-            return UserInterfaceAgent
-        elif name == 'ReportGeneratorAgent':
-            from .report_generator_agent import ReportGeneratorAgent
-            return ReportGeneratorAgent
-        elif name == 'InsightGeneratorAgent':
-            from .insight_generator_agent import InsightGeneratorAgent
-            return InsightGeneratorAgent
-        elif name == 'AssistantAgent':
-            from .assistant_agent import AssistantAgent
-            return AssistantAgent
-        elif name == 'MasterOrchestratorAgent':
-            from .master_orchestrator_agent import MasterOrchestratorAgent
-            return MasterOrchestratorAgent
-    raise AttributeError(f"module '{__name__}' has no attribute '{name}'") 
-=======
     'MasterOrchestratorAgent',
     'initialize_environment',
     'get_config'
-] 
->>>>>>> 85e4930a49d3ee4443b3597a02297d6fc8ad1a59
+]

@@ -101,7 +101,7 @@ python-dotenv>=1.0.0
 
 # AutoGen and AI
 pyautogen>=0.1.0
-openai>=1.3.0
+anthropic>=0.8.0
 
 # Data visualization
 plotly>=5.15.0
@@ -120,49 +120,12 @@ psycopg2-binary>=2.9.5
 pytest>=7.3.1
 mypy>=1.0.0
 black>=22.3.0
->>>>>>> 85e4930a49d3ee4443b3597a02297d6fc8ad1a59
 
 # Report generation
 weasyprint>=59.0
 pdfkit>=1.0.0
 jupyter>=1.0.0
 
-<<<<<<< HEAD
-# Monitoring and logging
-prometheus-client>=0.19.0
-opentelemetry-api==1.20.0
-opentelemetry-sdk==1.20.0
-structlog==23.2.0
-
-# API and networking
-aiohttp==3.9.0
-httpx==0.25.1
-urllib3==2.1.0
-fastapi==0.104.1  # For API endpoints
-uvicorn==0.24.0  # ASGI server
-
-# Utilities
-python-dateutil==2.8.2
-pytz==2023.3.post1
-tenacity>=8.2.0
-humanize==4.8.0
-
-# LLM and embeddings
-openai>=1.0.0
-anthropic>=0.5.0
-tiktoken==0.5.1
-sentence-transformers==3.4.1
-torch==2.6.0
-transformers==4.48.2
-tokenizers==0.21.0
-einops==0.7.0
-accelerate==0.24.1
-huggingface-hub==0.28.1
-filelock==3.17.0
-fsspec==2025.2.0
-networkx==3.4.2
-sympy==1.13.1
-=======
 # Core Data Processing
 scipy>=1.10.0
 
@@ -191,8 +154,8 @@ jinja2>=3.1.2
 prophet>=1.1.0
 statsmodels>=0.14.0
 
-# AutoGen and LLM
-anthropic>=0.5.0
+# LLM and embeddings
+anthropic>=0.8.0
 tiktoken>=0.5.1
 sentence-transformers>=2.2.0
 torch>=2.0.0
@@ -244,4 +207,3 @@ humanize>=4.8.0
 aiohttp>=3.9.0
 httpx>=0.25.1
 urllib3>=2.1.0
->>>>>>> 85e4930a49d3ee4443b3597a02297d6fc8ad1a59

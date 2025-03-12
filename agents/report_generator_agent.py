@@ -3,43 +3,24 @@ import plotly.express as px
 import plotly.graph_objects as go
 import json
 from datetime import datetime
-<<<<<<< HEAD
 from typing import Dict, Any, List, Optional, Union
 import openai
 from pathlib import Path
 from sqlalchemy import create_engine
 from .base_agent import BaseAgent
 from autogen import UserProxyAgent, AssistantAgent
-from .data_manager_agent import DataManagerAgent
-from .insight_generator_agent import InsightGeneratorAgent
-from .llm_manager_agent import LLMManagerAgent
-
-# Import specific agents
-from agents import MasterOrchestratorAgent
-
-# Import all agents
-from agents import *
-
-# Import the package
-import agents
-=======
-from typing import Dict, Any, List, Optional
-import openai
-from pathlib import Path
-from agents.base_agent import BaseAgent
-from sqlalchemy import create_engine
->>>>>>> 85e4930a49d3ee4443b3597a02297d6fc8ad1a59
 
 class ReportGeneratorAgent(BaseAgent):
     """Agent responsible for generating reports."""
     
-    def __init__(self, config: Dict[str, Any], output_dir: str, openai_api_key: str):
+    def __init__(self, config: Dict[str, Any], output_dir: str, anthropic_api_key: str):
         """Initialize with configuration."""
-<<<<<<< HEAD
-        super().__init__(config)
-        self.required_config = ["template_dir", "output_dir"]
+        super().__init__("report_generator_agent")
+        self.config = config
+        self.anthropic_api_key = anthropic_api_key
+        self.output_dir = Path(output_dir)
         self.template_dir = Path(config.get("template_dir", "./templates"))
-        self.output_dir = Path(config.get("output_dir", "./reports"))
+        self.required_config = ["template_dir", "output_dir"]
         
         # Initialize the agent system
         self.analyst_agent = AssistantAgent(
@@ -65,82 +46,20 @@ class ReportGeneratorAgent(BaseAgent):
             system_message="You coordinate the report generation process between different agents.",
             human_input_mode="NEVER"
         )
-        
+    
     async def initialize(self) -> bool:
-        """Initialize the report generator agent."""
+        """Initialize the report generator."""
         if not self.validate_config(self.required_config):
             return False
             
-        # Create necessary directories
-        self.template_dir.mkdir(parents=True, exist_ok=True)
-        self.output_dir.mkdir(parents=True, exist_ok=True)
-        return True
-    
-    async def process(self, request: Dict[str, Any]) -> Dict[str, Any]:
-        """Process report generation requests."""
         try:
-            action = request.get("action")
-            if not action:
-                return {"success": False, "error": "No action specified"}
+            # Set up Anthropic API key
+            import anthropic
+            self.client = anthropic.Client(api_key=self.anthropic_api_key)
             
-            if action == "generate_report":
-                return await self._generate_report(request.get("parameters", {}))
-            elif action == "generate_report_from_prompt":
-                return await self._generate_report_from_prompt(request.get("parameters", {}))
-            else:
-                return {"success": False, "error": f"Unknown action: {action}"}
-                
-        except Exception as e:
-            self.logger.error(f"Error processing report request: {str(e)}")
-            return {"success": False, "error": str(e)}
-    
-    async def _generate_report(self, parameters: Dict[str, Any]) -> Dict[str, Any]:
-        """Generate a report based on parameters."""
-        # TODO: Implement actual report generation
-        return {
-            "success": True,
-            "data": {
-                "summary": "Report summary",
-                "charts": [],
-                "insights": [],
-                "data_tables": {},
-                "report_url": ""
-            }
-        }
-    
-    async def _generate_report_from_prompt(self, parameters: Dict[str, Any]) -> Dict[str, Any]:
-        """Generate a report from a natural language prompt."""
-        # TODO: Implement prompt-based report generation
-        return {
-            "success": True,
-            "data": {
-                "summary": "Report summary",
-                "charts": [],
-                "insights": [],
-                "data_tables": {},
-                "report_url": ""
-            }
-        }
-
-    async def cleanup(self) -> bool:
-        """Clean up resources."""
-        try:
-=======
-        super().__init__("report_generator_agent")
-        self.config = config
-        self.output_dir = Path(output_dir)
-        self.output_dir.mkdir(parents=True, exist_ok=True)
-        self.openai_api_key = openai_api_key
-        
-    async def initialize(self) -> bool:
-        """Initialize the report generator."""
-        try:
-            # Set up OpenAI API key
-            openai.api_key = self.openai_api_key
-            
-            # Verify output directory exists and is writable
-            if not self.output_dir.exists():
-                self.output_dir.mkdir(parents=True)
+            # Create necessary directories
+            self.template_dir.mkdir(parents=True, exist_ok=True)
+            self.output_dir.mkdir(parents=True, exist_ok=True)
             
             # Test write permissions
             test_file = self.output_dir / ".test"
@@ -161,24 +80,21 @@ class ReportGeneratorAgent(BaseAgent):
     async def cleanup(self) -> bool:
         """Clean up resources."""
         try:
->>>>>>> 85e4930a49d3ee4443b3597a02297d6fc8ad1a59
-            # Any cleanup needed
+            # Clean up any resources
             self.logger.info("Report generator cleaned up successfully")
             return True
         except Exception as e:
             self.logger.error(f"Error cleaning up report generator: {str(e)}")
             return False
     
-<<<<<<< HEAD
-=======
-    async def process(self, input_data: Dict[str, Any]) -> Dict[str, Any]:
+    async def process(self, request: Dict[str, Any]) -> Dict[str, Any]:
         """Process report generation requests."""
         try:
-            if not self.validate_input(input_data, ["action", "parameters"]):
+            if not self.validate_input(request, ["action", "parameters"]):
                 raise ValueError("Missing required fields: action, parameters")
             
-            action = input_data["action"]
-            parameters = input_data["parameters"]
+            action = request["action"]
+            parameters = request["parameters"]
             
             if action == "create_visualization":
                 # Get data if not provided
@@ -228,6 +144,9 @@ class ReportGeneratorAgent(BaseAgent):
                     }
                 }
             
+            elif action == "generate_report_from_prompt":
+                return await self._generate_report_from_prompt(parameters)
+            
             else:
                 raise ValueError(f"Unknown action: {action}")
                 
@@ -237,8 +156,7 @@ class ReportGeneratorAgent(BaseAgent):
                 "success": False,
                 "error": str(e)
             }
-
->>>>>>> 85e4930a49d3ee4443b3597a02297d6fc8ad1a59
+    
     async def _gather_report_data(self, parameters: Dict[str, Any]) -> Dict[str, pd.DataFrame]:
         """Gather data for the report based on parameters."""
         try:
@@ -387,7 +305,7 @@ class ReportGeneratorAgent(BaseAgent):
     async def _generate_insights(self, data_tables: Dict[str, pd.DataFrame], parameters: Dict[str, Any]) -> Optional[str]:
         """Generate insights from the data."""
         try:
-            if not self.openai_api_key:
+            if not self.anthropic_api_key:
                 return None
             
             report_type = parameters.get("report_type")
@@ -402,7 +320,7 @@ class ReportGeneratorAgent(BaseAgent):
                     top_categories = sales_data.groupby("CategoryName")["LineTotal"].sum().nlargest(3)
                     top_territories = sales_data.groupby("Territory")["LineTotal"].sum().nlargest(3)
                     
-                    # Generate insights using OpenAI
+                    # Generate insights using Anthropic
                     prompt = f"""
                     Analyze the following sales metrics and provide 3-5 key business insights:
                     
@@ -418,17 +336,9 @@ class ReportGeneratorAgent(BaseAgent):
                     Provide insights in bullet points.
                     """
                     
-                    response = await openai.ChatCompletion.acreate(
-                        model="gpt-4-turbo-preview",
-                        messages=[
-                            {"role": "system", "content": "You are a business analyst providing insights from sales data."},
-                            {"role": "user", "content": prompt}
-                        ],
-                        temperature=0.7,
-                        max_tokens=500
-                    )
+                    response = await self.client.generate_content(prompt)
                     
-                    return response.choices[0].message.content
+                    return response
             
             elif report_type == "Customer Insights":
                 # Similar implementation for customer insights
@@ -451,7 +361,7 @@ class ReportGeneratorAgent(BaseAgent):
     async def _generate_summary(self, data_tables: Dict[str, pd.DataFrame], parameters: Dict[str, Any]) -> Optional[str]:
         """Generate a summary of the report."""
         try:
-            if not self.openai_api_key:
+            if not self.anthropic_api_key:
                 return None
             
             report_type = parameters.get("report_type")
@@ -468,7 +378,7 @@ class ReportGeneratorAgent(BaseAgent):
                         "top_territory": sales_data.groupby("Territory")["LineTotal"].sum().idxmax()
                     })
             
-            # Generate summary using OpenAI
+            # Generate summary using Anthropic
             prompt = f"""
             Generate a brief executive summary for a {report_type} report with the following metrics:
             
@@ -477,17 +387,9 @@ class ReportGeneratorAgent(BaseAgent):
             Keep the summary concise and focused on key findings.
             """
             
-            response = await openai.ChatCompletion.acreate(
-                model="gpt-4-turbo-preview",
-                messages=[
-                    {"role": "system", "content": "You are a business analyst writing executive summaries."},
-                    {"role": "user", "content": prompt}
-                ],
-                temperature=0.7,
-                max_tokens=300
-            )
+            response = await self.client.generate_content(prompt)
             
-            return response.choices[0].message.content
+            return response
             
         except Exception as e:
             self.logger.error(f"Error generating summary: {str(e)}")
@@ -585,136 +487,17 @@ class ReportGeneratorAgent(BaseAgent):
                 "success": False,
                 "error": str(e)
             }
-<<<<<<< HEAD
 
-    async def generate_report(self, query: str) -> Dict[str, Any]:
-        """
-        Generates any type of report based on natural language query and available data
-        using a multi-agent approach
-        
-        Args:
-            query (str): Natural language query describing the desired report
-            
-        Returns:
-            Dict containing:
-            - analysis_results: Dict of analyzed data
-            - visualizations: List of generated visualizations
-            - insights: Natural language insights
-            - metadata: Report generation metadata
-        """
-        try:
-            # Get available data schema
-            available_data = await self._get_available_data_schema()
-            
-            # Initialize the report generation chat
-            report_request = {
-                'query': query,
-                'available_data': available_data,
-                'timestamp': datetime.now().isoformat()
+    async def _generate_report_from_prompt(self, parameters: Dict[str, Any]) -> Dict[str, Any]:
+        """Generate a report from a natural language prompt."""
+        # TODO: Implement prompt-based report generation
+        return {
+            "success": True,
+            "data": {
+                "summary": "Report summary",
+                "charts": [],
+                "insights": [],
+                "data_tables": {},
+                "report_url": ""
             }
-            
-            # Start the multi-agent conversation
-            await self.coordinator.initiate_chat(
-                self.analyst_agent,
-                message=f"Analyze this report request: {report_request}"
-            )
-            
-            # Validate feasibility
-            feasibility_result = await self._validate_request(query, available_data)
-            if not feasibility_result['is_feasible']:
-                return {
-                    'error': 'Cannot generate requested report with available data',
-                    'suggestions': feasibility_result['alternative_suggestions'],
-                    'status': 'failed',
-                    'metadata': {
-                        'generated_at': datetime.now().isoformat(),
-                        'query': query
-                    }
-                }
-            
-            # Generate the report components using the agent system
-            analysis_results = await self._generate_analysis(
-                feasibility_result['validated_params'],
-                available_data
-            )
-            
-            visualizations = await self._generate_visualizations(
-                analysis_results,
-                feasibility_result['validated_params']
-            )
-            
-            insights = await self._generate_insights(
-                analysis_results,
-                visualizations,
-                feasibility_result['validated_params']
-            )
-            
-            return {
-                'analysis_results': analysis_results,
-                'visualizations': visualizations,
-                'insights': insights,
-                'metadata': {
-                    'generated_at': datetime.now().isoformat(),
-                    'query': query,
-                    'data_columns_used': list(analysis_results.keys()),
-                    'status': 'success'
-                }
-            }
-            
-        except Exception as e:
-            return {
-                'error': str(e),
-                'status': 'failed',
-                'metadata': {
-                    'generated_at': datetime.now().isoformat(),
-                    'query': query
-                }
-            }
-
-    async def _validate_request(self, query: str, available_data: Dict[str, Any]) -> Dict[str, Any]:
-        """
-        Uses the analyst agent to validate if the report request is feasible
-        """
-        validation_result = await self.coordinator.get_agent_response(
-            self.analyst_agent,
-            f"Validate if this report request can be fulfilled with available data: {query}\nAvailable data: {available_data}"
-        )
-        return validation_result
-
-    async def _generate_analysis(self, params: Dict[str, Any], data: Dict[str, Any]) -> Dict[str, Any]:
-        """
-        Uses the analyst agent to generate the analysis
-        """
-        analysis_result = await self.coordinator.get_agent_response(
-            self.analyst_agent,
-            f"Generate analysis based on these parameters: {params}\nUsing data: {data}"
-        )
-        return analysis_result
-
-    async def _generate_visualizations(self, analysis_results: Dict[str, Any], params: Dict[str, Any]) -> List[Dict[str, Any]]:
-        """
-        Uses the visualization agent to generate appropriate visualizations
-        """
-        viz_result = await self.coordinator.get_agent_response(
-            self.visualization_agent,
-            f"Create visualizations for these analysis results: {analysis_results}\nParameters: {params}"
-        )
-        return viz_result
-
-    async def _generate_insights(self, analysis_results: Dict[str, Any], visualizations: List[Dict[str, Any]], params: Dict[str, Any]) -> List[str]:
-        """
-        Uses the insight agent to generate insights from the analysis and visualizations
-        """
-        insights_result = await self.coordinator.get_agent_response(
-            self.insight_agent,
-            f"Generate insights from analysis: {analysis_results}\nVisualizations: {visualizations}\nParameters: {params}"
-        )
-        return insights_result
-
-    async def _get_available_data_schema(self) -> Dict[str, Any]:
-        """
-        Gets the available data schema from the data source
-        """
-        return await self.data_source.get_schema()
-=======
->>>>>>> 85e4930a49d3ee4443b3597a02297d6fc8ad1a59
+        }

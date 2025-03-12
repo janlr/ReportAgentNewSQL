@@ -6,26 +6,29 @@ from pathlib import Path
 class BaseAgent(ABC):
     """Base class for all agents in the system."""
     
-<<<<<<< HEAD
-    def __init__(self, config: Dict[str, Any]):
-        """Initialize with configuration."""
-        self.config = config
-        self.logger = logging.getLogger(self.__class__.__name__)
+    def __init__(self, name: str, config: Optional[Dict[str, Any]] = None):
+        """Initialize with name and configuration."""
+        self.name = name
+        self.config = config or {}
+        self.logger = logging.getLogger(name)
         self.required_config = []
     
     def validate_config(self, required_fields: list) -> bool:
         """Validate that all required configuration fields are present."""
+        # Skip validation if no required fields
+        if not required_fields:
+            return True
+            
+        # For database config, handle Windows Authentication case
+        if self.config.get("trusted_connection", "yes").lower() == "yes":
+            # Remove user and password from required fields if using Windows Auth
+            required_fields = [f for f in required_fields if f not in ["user", "password"]]
+            
         missing_fields = [field for field in required_fields if field not in self.config]
         if missing_fields:
             self.logger.error(f"Missing required configuration fields: {missing_fields}")
             return False
         return True
-=======
-    def __init__(self, name: str, config: Optional[Dict[str, Any]] = None):
-        self.name = name
-        self.config = config or {}
-        self.logger = logging.getLogger(name)
->>>>>>> 85e4930a49d3ee4443b3597a02297d6fc8ad1a59
     
     async def initialize(self) -> bool:
         """Initialize the agent."""
