@@ -14,11 +14,10 @@ class ReportGeneratorAgent(BaseAgent):
     """Agent responsible for generating reports."""
     
     def __init__(self, config: Dict[str, Any], output_dir: str, anthropic_api_key: str):
-        """Initialize with configuration."""
-        super().__init__("report_generator_agent")
-        self.config = config
-        self.anthropic_api_key = anthropic_api_key
+        """Initialize the report generator."""
+        super().__init__("report_generator_agent", config)
         self.output_dir = Path(output_dir)
+        self.anthropic_api_key = anthropic_api_key
         self.template_dir = Path(config.get("template_dir", "./templates"))
         self.required_config = ["template_dir", "output_dir"]
         

@@ -11,9 +11,9 @@ class VisualizationAgent(BaseAgent):
     """Agent responsible for creating visualizations."""
     
     def __init__(self, config: Optional[Dict[str, Any]] = None):
-        super().__init__("visualization", config)
+        super().__init__("visualization_agent", config)
         self.default_colors = px.colors.qualitative.Set3
-        self.theme = config.get("theme", "plotly_white")
+        self.theme = config.get("theme", "plotly_white") if config else "plotly_white"
     
     async def initialize(self) -> bool:
         """Initialize visualization resources."""
@@ -34,7 +34,16 @@ class VisualizationAgent(BaseAgent):
                 raise ValueError("Invalid input data")
             
             viz_type = input_data["type"]
-            data = pd.DataFrame(input_data["data"])
+            
+            # Ensure data is converted to DataFrame if it's a list of dicts
+            data = input_data["data"]
+            if isinstance(data, list):
+                data = pd.DataFrame(data)
+            elif isinstance(data, dict) and "tables" in data:
+                # Handle special case for table listings
+                data = pd.DataFrame(data["tables"])
+            else:
+                data = pd.DataFrame(data)
             
             if viz_type == "dashboard":
                 return await self._create_dashboard(data, input_data.get("config", {}))
@@ -46,6 +55,7 @@ class VisualizationAgent(BaseAgent):
                 raise ValueError(f"Unknown visualization type: {viz_type}")
                 
         except Exception as e:
+            self.logger.error(f"Error in visualization processing: {str(e)}")
             return await self.handle_error(e, {"input": input_data})
     
     async def cleanup(self) -> bool:

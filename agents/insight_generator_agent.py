@@ -16,9 +16,10 @@ class InsightGeneratorAgent(BaseAgent):
     
     def __init__(self, config: Dict[str, Any]):
         """Initialize with configuration."""
-        super().__init__(config)
+        super().__init__("insight_generator_agent", config)
         self.required_config = ["llm_manager", "cache_dir"]
         self.cache_dir = Path(config.get("cache_dir", "./cache/insights"))
+        self.llm_available = False
         
         # Validate LLM manager configuration
         if "llm_manager" not in config:
@@ -29,30 +30,51 @@ class InsightGeneratorAgent(BaseAgent):
             raise ValueError("LLM manager configuration must include provider and model")
         
         # Initialize LLM manager
-        self.llm_manager = LLMManagerAgent(self.llm_config)
+        self.llm_manager = LLMManagerAgent({
+            "provider": self.llm_config["provider"],
+            "model": self.llm_config["model"],
+            "api_key": self.llm_config["api_key"],
+            "cache_dir": self.llm_config.get("cache_dir", "./cache/llm"),
+            "cache": self.llm_config.get("cache", {
+                "enabled": True,
+                "ttl": 3600,
+                "max_size": 1000,
+                "exact_match": True
+            }),
+            "models": self.llm_config.get("models", {}),
+            "monitoring": self.llm_config.get("monitoring", {"enabled": False}),
+            "cost_limits": self.llm_config.get("cost_limits", {
+                "daily": float("inf"),
+                "monthly": float("inf")
+            })
+        })
             
     async def initialize(self) -> bool:
         """Initialize the insight generator agent."""
         if not self.validate_config(self.required_config):
+            self.logger.error("Invalid configuration for insight generator agent")
             return False
             
         # Create cache directory
         self.cache_dir.mkdir(parents=True, exist_ok=True)
         
-        # Initialize LLM manager
-        self.logger.info(f"Initializing LLM manager with provider: {self.llm_config['provider']}")
-        if not await self.llm_manager.initialize():
-            raise RuntimeError("Failed to initialize LLM manager")
+        # Skip LLM manager initialization - marked as unavailable
+        self.llm_available = False
+        self.logger.warning("Skipping LLM manager initialization - insights will be limited to statistical analysis only")
         
-        self.logger.info("Insight generator agent initialized successfully")
+        self.logger.info("Insight generator agent initialized successfully (without LLM capabilities)")
         return True
     
     async def cleanup(self) -> bool:
         """Clean up insight generator resources."""
         try:
-            # Clean up LLM manager
-            if not await self.llm_manager.cleanup():
-                self.logger.warning("Failed to clean up LLM manager")
+            # Clean up LLM manager if it was initialized
+            if self.llm_available:
+                try:
+                    if not await self.llm_manager.cleanup():
+                        self.logger.warning("Failed to clean up LLM manager")
+                except Exception as e:
+                    self.logger.warning(f"Error cleaning up LLM manager: {str(e)}")
             
             self.logger.info("Insight generator agent cleaned up successfully")
             return True
@@ -66,6 +88,16 @@ class InsightGeneratorAgent(BaseAgent):
             action = request.get("action")
             if not action:
                 return {"success": False, "error": "No action specified"}
+            
+            # Check if LLM is required for this action
+            llm_required_actions = ["generate_llm_insights", "summarize_with_llm"]
+            if not self.llm_available and action in llm_required_actions:
+                self.logger.warning(f"Cannot perform action {action} because LLM manager is not available")
+                return {
+                    "success": False, 
+                    "error": "LLM manager not available. This feature is disabled.",
+                    "fallback": True
+                }
             
             if action == "generate_insights":
                 return await self._generate_insights(request.get("parameters", {}))

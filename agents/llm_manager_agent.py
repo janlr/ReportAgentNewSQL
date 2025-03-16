@@ -22,20 +22,13 @@ class LLMManagerAgent(BaseAgent):
     
     def __init__(self, config: Dict[str, Any]):
         """Initialize with configuration."""
-        super().__init__("llm_manager_agent")
-        self.config = config
-        self.required_config = ["provider", "model"]
+        super().__init__("llm_manager_agent", config)
+        self.required_config = ["provider", "model", "api_key"]
         
-        # Set up Anthropic API key if using Anthropic
-        if config["provider"].lower() == "anthropic":
-            self.client = anthropic.Client(api_key=config.get("api_key"))
-        
-        self.active_provider = config.get("default_provider", "anthropic")
+        # Set core attributes first
+        self.active_provider = config.get("provider", "anthropic")
         self.cache_dir = Path(config.get("cache_dir", "./cache/llm"))
         self.cache_dir.mkdir(parents=True, exist_ok=True)
-        
-        # Initialize logger first for better error tracking
-        self._setup_logging()
         
         # Initialize core components
         self._setup_clients()
@@ -54,20 +47,29 @@ class LLMManagerAgent(BaseAgent):
     
     def _setup_clients(self):
         """Initialize API clients."""
-        providers_config = {
-            "anthropic": self._setup_anthropic
-        }
-        
-        for provider, setup_func in providers_config.items():
-            if provider in self.config:
-                setup_func()
-    
-    def _setup_anthropic(self):
-        """Setup Anthropic client."""
-        if api_key := self.config["anthropic"].get("api_key"):
-            self.client = anthropic.Client(api_key=api_key)
+        provider = self.config.get("provider", "anthropic")
+        if provider == "anthropic":
+            api_key = self.config.get("api_key")
+            self.logger.info("Setting up Anthropic client...")
+            
+            if not api_key:
+                self.logger.error("No API key provided in config")
+                return
+                
+            # Remove any quotes that might have been included
+            api_key = api_key.strip('"').strip("'")
+            
+            if not api_key.startswith("sk-ant"):
+                self.logger.error(f"API key format appears invalid - should start with 'sk-ant'")
+                return
+                
+            try:
+                self.client = anthropic.Client(api_key=api_key)
+                self.logger.info("Anthropic client initialized successfully")
+            except Exception as e:
+                self.logger.error(f"Failed to initialize Anthropic client: {str(e)}")
         else:
-            self.logger.warning("Anthropic API key not provided")
+            raise ValueError(f"Unsupported provider: {provider}")
     
     async def _generate_provider_response(self, provider: str, model: str, prompt: str, max_tokens: int) -> tuple[str, int]:
         """Generate response from specific provider."""
@@ -100,9 +102,9 @@ class LLMManagerAgent(BaseAgent):
         """Generate response from LLM with caching and monitoring."""
         try:
             provider = input_data.get("provider", self.active_provider)
-            model = input_data.get("model", self.config[provider]["default_model"])
+            model = input_data.get("model", self.config["model"])
             prompt = input_data["prompt"]
-            max_tokens = input_data.get("max_tokens", self.config[provider]["models"][model].get("max_tokens", 500))
+            max_tokens = input_data.get("max_tokens", self.config["models"][model].get("max_tokens", 500))
             
             # Check cache
             if self.cache_config["enabled"]:
@@ -260,10 +262,7 @@ class LLMManagerAgent(BaseAgent):
     
     async def _track_cost(self, provider: str, model: str, tokens: int):
         """Track cost and check against limits."""
-        if provider not in self.config:
-            return
-        
-        model_config = self.config[provider]["models"].get(model, {})
+        model_config = self.config["models"].get(model, {})
         cost_per_1k = model_config.get("cost_per_1k_tokens", 0)
         cost = (tokens / 1000) * cost_per_1k
         
@@ -282,17 +281,53 @@ class LLMManagerAgent(BaseAgent):
     async def initialize(self) -> bool:
         """Initialize the LLM manager agent."""
         try:
-            # Verify API keys are present
-            if "anthropic" in self.config and not self.config["anthropic"].get("api_key"):
-                self.logger.error("Anthropic API key not provided")
+            # Check that all required configuration is present
+            if not self.validate_config(self.required_config):
+                self.logger.error("Missing required configuration fields for LLM manager")
                 return False
             
-            # Test connection to active provider
-            test_prompt = "Test connection."
-            await self.generate_async({
-                "prompt": test_prompt,
-                "max_tokens": 5
-            })
+            # Verify API keys are valid
+            if self.active_provider == "anthropic":
+                api_key = self.config.get("api_key", "")
+                
+                # Log key format for debugging (safely)
+                key_start = api_key[:10] if len(api_key) > 10 else "N/A"
+                key_length = len(api_key)
+                self.logger.info(f"API Key format check - Start: {key_start}..., Length: {key_length}")
+                
+                # Check for common issues
+                if not api_key:
+                    self.logger.error("API key is empty")
+                    return False
+                    
+                if '"' in api_key or "'" in api_key:
+                    self.logger.warning("API key contains quotes - removing them")
+                    api_key = api_key.strip('"').strip("'")
+                    self.config["api_key"] = api_key
+                
+                if not api_key.startswith("sk-ant"):
+                    self.logger.error("API key format is invalid - should start with 'sk-ant'")
+                    return False
+                
+                try:
+                    # Test connection to active provider
+                    test_prompt = "Test connection."
+                    self.logger.info("Testing Anthropic API connection...")
+                    await self.generate_async({
+                        "prompt": test_prompt,
+                        "max_tokens": 5
+                    })
+                    self.logger.info("Successfully connected to Anthropic API")
+                except Exception as e:
+                    self.logger.error(f"Failed to connect to Anthropic API: {str(e)}")
+                    self.logger.error(f"Exception type: {type(e).__name__}")
+                    if "401" in str(e):
+                        self.logger.error("Authentication failed - please check your API key")
+                    elif "403" in str(e):
+                        self.logger.error("Access forbidden - your API key may not be activated yet")
+                    elif "429" in str(e):
+                        self.logger.error("Rate limit exceeded - please try again later")
+                    return False
             
             self.logger.info(f"LLM manager initialized successfully with provider: {self.active_provider}")
             return True
@@ -326,4 +361,24 @@ class LLMManagerAgent(BaseAgent):
             if metric_name == "duration":
                 self.metrics[metric_name].labels(**labels).observe(value)
             else:
-                self.metrics[metric_name].labels(**labels).inc(value) 
+                self.metrics[metric_name].labels(**labels).inc(value)
+
+    async def process(self, input_data: Dict[str, Any]) -> Dict[str, Any]:
+        """Process input data and return response."""
+        try:
+            if "prompt" not in input_data:
+                raise ValueError("Prompt is required in input data")
+                
+            response = await self.generate_async(input_data)
+            return {
+                "success": True,
+                "response": response,
+                "provider": self.active_provider,
+                "model": self.config.get("model")
+            }
+        except Exception as e:
+            self.logger.error(f"Error processing input: {str(e)}")
+            return {
+                "success": False,
+                "error": str(e)
+            } 

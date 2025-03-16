@@ -1,6 +1,6 @@
 # ReportAgentNewSQL
 
-An intelligent reporting system powered by AutoGen that generates insights and reports from SQL databases.
+An intelligent reporting system powered by AutoGen that generates insights and reports from SQL databases. Currently demonstrated using AdventureWorks as a sample database, but designed to work with any SQL database.
 
 ## Features
 
@@ -11,93 +11,111 @@ An intelligent reporting system powered by AutoGen that generates insights and r
 - Automated insight generation
 - Interactive report generation
 - Configurable agent behaviors
+- Schema exploration and relationship detection
+- AI-powered data analysis and recommendations
+
+## Tech Stack
+
+- **Framework**: AutoGen for multi-agent orchestration
+- **Database**: Support for multiple SQL databases (SQL Server, MySQL, PostgreSQL, SQLite)
+- **Frontend**: Streamlit
+- **Data Processing**: Pandas, NumPy, SQLAlchemy
+- **Visualization**: Plotly, Matplotlib, Seaborn
+- **AI/ML**: AutoGen framework, Claude API
+- **Testing**: pytest, mypy
+
+## Prerequisites
+
+- Python 3.9+
+- SQL Database (currently tested with SQL Server)
+- Appropriate database drivers (e.g., ODBC Driver 17 for SQL Server)
+- Anthropic API key (for AI features)
 
 ## Installation
 
 1. Clone the repository:
-```bash
-git clone https://github.com/janlr/ReportAgentNewSQL.git
-cd ReportAgentNewSQL
-```
+   ```bash
+   git clone https://github.com/janlr/ReportAgentNewSQL.git
+   cd ReportAgentNewSQL
+   ```
 
-2. Install dependencies:
-```bash
-pip install -r requirements.txt
-```
+2. Create and activate virtual environment:
+   ```bash
+   python -m venv venv
+   source venv/bin/activate  # Linux/Mac
+   # or
+   venv\Scripts\activate  # Windows
+   ```
 
-3. Set up environment variables:
-```bash
-cp .env.example .env
-# Edit .env with your configuration
-```
+3. Install dependencies:
+   ```bash
+   pip install -r requirements.txt
+   ```
 
-## Environment Setup
+4. Copy `.env.example` to `.env` and configure your environment variables:
+   ```bash
+   cp .env.example .env
+   ```
 
-1. Copy the example environment file:
-```bash
-cp .env.example .env
-```
+5. Configure your database connection and API keys in `.env`
 
-2. Edit `.env` with your actual configuration:
-```env
-DB_HOST=your_actual_host
-DB_PASSWORD=your_actual_password
-OPENAI_API_KEY=your_actual_api_key
-```
+## Running the Application
 
-⚠️ Never commit your `.env` file to version control!
-
-## Usage
-
-1. Configure your database connection in `.env`:
-```
-DB_TYPE=mssql
-DB_HOST=your_host
-DB_NAME=your_database
-DB_USER=your_user
-DB_PASSWORD=your_password
-```
-
-2. Run the application:
+Start the Streamlit app:
 ```bash
 streamlit run app.py
 ```
 
+The application will be available at `http://localhost:8501`
+
 ## Project Structure
 
-```
-ReportAgentNewSQL/
-├── agents/                 # Agent implementations
-│   ├── __init__.py
-│   ├── base_agent.py
-│   ├── master_orchestrator_agent.py
-│   ├── database_agent.py
-│   ├── data_manager_agent.py
-│   ├── user_interface_agent.py
-│   ├── report_generator_agent.py
-│   ├── insight_generator_agent.py
-│   ├── assistant_agent.py
-│   └── llm_manager_agent.py
-├── app.py                 # Main application entry point
-├── requirements.txt       # Project dependencies
-├── .env.example          # Example environment variables
-└── README.md             # Project documentation
-```
+- `/agents`: Multi-agent system components
+  - `master_orchestrator_agent.py`: Coordinates all other agents
+  - `database_agent.py`: Handles database connections and queries
+  - `insight_generator_agent.py`: Generates insights from data
+  - `report_generator_agent.py`: Creates reports
+  - `visualization_agent.py`: Handles data visualization
+  - `llm_manager_agent.py`: Manages LLM interactions
+- `/utils`: Utility functions and helpers
+- `/tests`: Test suite
+- `/docs`: Documentation
+- `/templates`: Report templates
+- `/cache`: Cached data and results
+- `/reports`: Generated reports
+
+## Development
+
+1. Install development dependencies:
+   ```bash
+   pip install -r dev-requirements.txt
+   ```
+
+2. Run tests:
+   ```bash
+   python run_tests.py
+   ```
+
+3. Check code quality:
+   ```bash
+   flake8
+   mypy .
+   ```
 
 ## Contributing
 
 1. Fork the repository
-2. Create your feature branch (`git checkout -b feature/amazing-feature`)
-3. Commit your changes (`git commit -m 'Add some amazing feature'`)
-4. Push to the branch (`git push origin feature/amazing-feature`)
+2. Create your feature branch (`git checkout -b feature/AmazingFeature`)
+3. Commit your changes (`git commit -m 'Add some AmazingFeature'`)
+4. Push to the branch (`git push origin feature/AmazingFeature`)
 5. Open a Pull Request
 
 ## License
 
-This project is licensed under the MIT License - see the LICENSE file for details.
+This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
 
 ## Acknowledgments
 
-- Built with [AutoGen](https://github.com/microsoft/autogen)
-- Powered by OpenAI and Anthropic LLMs
-- Uses Streamlit for the user interface 
+- AutoGen framework by Microsoft
+- Anthropic's Claude API
+- AdventureWorks sample database used for demonstrations 

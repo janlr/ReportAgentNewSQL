@@ -30,6 +30,9 @@ def ensure_directories():
     directories = [
         "./cache",
         "./cache/insights",
+        "./cache/llm",
+        "./cache/data",
+        "./cache/visualizations",
         "./preferences",
         "./reports",
         "./templates",
@@ -57,12 +60,16 @@ def init_session_state():
     if 'config' not in st.session_state:
         st.session_state.config = {
             'database': {
+                'type': 'mssql',
                 'host': os.getenv('DB_HOST'),
                 'port': os.getenv('DB_PORT'),
                 'database': os.getenv('DB_NAME'),
                 'driver': os.getenv('DB_DRIVER'),
                 'trusted_connection': os.getenv('DB_TRUSTED_CONNECTION', 'yes'),
-                'echo': os.getenv('DB_ECHO', 'True').lower() == 'true'
+                'user': os.getenv('DB_USER'),
+                'password': os.getenv('DB_PASSWORD'),
+                'echo': os.getenv('DB_ECHO', 'True').lower() == 'true',
+                'cache_dir': './cache/database'
             },
             'api_keys': {
                 'anthropic': os.getenv('ANTHROPIC_API_KEY')
@@ -80,7 +87,18 @@ async def init_components():
     try:
         # Load configuration
         config = {
-            "database": st.session_state.config['database'],
+            "database": {
+                "type": "mssql",
+                "host": os.getenv('DB_HOST'),  # Don't escape backslashes
+                "port": int(os.getenv('DB_PORT', '1433')),
+                "database": os.getenv('DB_NAME'),
+                "driver": os.getenv('DB_DRIVER'),
+                "trusted_connection": os.getenv('DB_TRUSTED_CONNECTION', 'yes'),
+                "user": os.getenv('DB_USER'),
+                "password": os.getenv('DB_PASSWORD'),
+                "echo": os.getenv('DB_ECHO', 'True').lower() == 'true',
+                "cache_dir": './cache/database'
+            },
             "user_interface": {
                 "preferences_dir": "./preferences"
             },
@@ -91,39 +109,80 @@ async def init_components():
                 },
                 "output_dir": "./reports"
             },
+            "visualization": {
+                "theme": "plotly_white",
+                "default_height": 500,
+                "default_width": 800,
+                "cache_dir": "./cache/visualizations"
+            },
             "insight_generator": {
                 "llm_manager": {
                     "provider": "anthropic",
                     "model": "claude-3-sonnet-20240229",
-                    "temperature": 0.7,
-                    "max_tokens": 1000,
-                    "api_key": st.session_state.config['api_keys']['anthropic']
+                    "api_key": st.session_state.config['api_keys']['anthropic'],
+                    "cache_dir": "./cache/llm",
+                    "cache": {
+                        "enabled": True,
+                        "ttl": 3600,
+                        "max_size": 1000,
+                        "exact_match": True
+                    },
+                    "models": {
+                        "claude-3-sonnet-20240229": {
+                            "max_tokens": 1000,
+                            "temperature": 0.7,
+                            "cost_per_1k_tokens": 0.0
+                        }
+                    },
+                    "monitoring": {
+                        "enabled": True,
+                        "log_level": "INFO"
+                    },
+                    "cost_limits": {
+                        "daily": 10.0,
+                        "monthly": 100.0
+                    }
                 },
                 "cache_dir": "./cache/insights"
             },
             "data_manager": {
-                "cache_dir": "./cache"
+                "cache_dir": "./cache/data",
+                "batch_size": 1000,
+                "max_workers": 4,
+                "cache_enabled": True,
+                "cache_ttl": 3600,
+                "max_retries": 3,
+                "data_validation": {
+                    "enabled": True,
+                    "strict_mode": False
+                },
+                "preprocessing": {
+                    "enabled": True,
+                    "handle_missing": True,
+                    "handle_outliers": True
+                }
             }
         }
         
         logger.info("Creating master orchestrator...")
-        # Use direct paths instead of accessing through config
         output_dir = config["report_generator"]["output_dir"]
         anthropic_api_key = st.session_state.config['api_keys']['anthropic']
         
         # Create orchestrator with required arguments and config
         orchestrator = MasterOrchestratorAgent(
+            config=config,
             output_dir=output_dir,
-            anthropic_api_key=anthropic_api_key,
-            config=config
+            anthropic_api_key=anthropic_api_key
         )
         
         logger.info("Initializing master orchestrator...")
-        success = await orchestrator.initialize()
-        
-        if not success:
-            logger.error("Failed to initialize master orchestrator")
-            raise RuntimeError("Failed to initialize master orchestrator")
+        try:
+            success = await orchestrator.initialize()
+            if not success:
+                raise RuntimeError("Master orchestrator initialization returned False")
+        except Exception as e:
+            logger.error(f"Master orchestrator initialization failed: {str(e)}", exc_info=True)
+            raise RuntimeError(f"Failed to initialize master orchestrator: {str(e)}")
         
         logger.info("Master orchestrator initialized successfully")
         return orchestrator
@@ -141,9 +200,19 @@ def main():
     # Initialize orchestrator if not already present
     if "orchestrator" not in st.session_state:
         try:
-            st.session_state.orchestrator = asyncio.run(init_components())
+            with st.spinner("Initializing application..."):
+                st.session_state.orchestrator = asyncio.run(init_components())
         except Exception as e:
-            st.error(f"Failed to initialize application: {str(e)}")
+            error_msg = str(e)
+            logger.error(f"Failed to initialize application: {error_msg}", exc_info=True)
+            st.error(
+                f"Failed to initialize application: {error_msg}\n\n"
+                "Please check your database configuration and connectivity."
+            )
+            
+            # Display configuration for debugging
+            if st.checkbox("Show Configuration"):
+                st.code(json.dumps(st.session_state.config, indent=2, default=str))
             return
     
     # Sidebar for navigation
@@ -184,53 +253,134 @@ def schema_explorer():
         st.error(f"Failed to get schema information: {result.get('error')}")
         return
         
-    schema_info = result["data"]
+    schema_info = result.get("data", {})
     
     # Schema selection
-    schemas = sorted(list(set(
-        info["schema"] for info in schema_info["tables"].values()
-    )))
-    selected_schema = st.selectbox(
-        "Select Schema", 
-        schemas,
-        key="schema_selector"
-    )
-    
-    # Display tables in selected schema
-    st.subheader(f"Tables in {selected_schema} Schema")
-    tables = [
-        info["name"] 
-        for info in schema_info["tables"].values() 
-        if info["schema"] == selected_schema
-    ]
-    
-    selected_table = st.selectbox("Select Table", sorted(tables))
-    
-    if selected_table:
-        # Get table details
-        table_info = schema_info["tables"][f"{selected_schema}.{selected_table}"]
+    if not schema_info or not isinstance(schema_info.get("tables"), list):
+        st.error("No tables found in the database or invalid data format")
+        return
         
-        # Display columns
-        st.write("Columns:")
-        columns_df = pd.DataFrame(table_info["columns"])
-        st.dataframe(columns_df)
+    # Extract unique schemas from tables
+    try:
+        schemas = sorted(list(set(table["schema"] for table in schema_info["tables"])))
         
-        # Display sample data
-        if st.button("Show Sample Data"):
-            result = asyncio.run(
+        if not schemas:
+            st.error("No schemas found in the database")
+            return
+            
+        selected_schema = st.selectbox(
+            "Select Schema", 
+            schemas,
+            key="schema_selector"
+        )
+        
+        # Display tables in selected schema
+        st.subheader(f"Tables in {selected_schema} Schema")
+        tables = [
+            table["name"] 
+            for table in schema_info["tables"] 
+            if table.get("schema") == selected_schema
+        ]
+        
+        if not tables:
+            st.warning(f"No tables found in schema {selected_schema}")
+            return
+            
+        selected_table = st.selectbox("Select Table", sorted(tables))
+        
+        if selected_table:
+            # Get detailed schema information for the selected table
+            table_result = asyncio.run(
                 st.session_state.orchestrator.process({
                     "workflow": "data_analysis",
-                    "action": "execute_query",
+                    "action": "get_schema_info",
                     "parameters": {
-                        "query": f"SELECT TOP 10 * FROM {selected_schema}.{selected_table}"
+                        "table_name": selected_table,
+                        "schema_name": selected_schema
                     }
                 })
             )
             
-            if result.get("success"):
-                st.dataframe(result["data"])
-            else:
-                st.error(f"Failed to get sample data: {result.get('error')}")
+            if not table_result.get("success"):
+                st.error(f"Failed to get table information: {table_result.get('error')}")
+                return
+                
+            table_data = table_result.get("data", {})
+            if not table_data or not isinstance(table_data.get("columns"), list):
+                st.error("Invalid table data format received")
+                return
+                
+            # Display columns
+            st.write("Columns:")
+            columns_data = table_data["columns"]
+            
+            # Ensure we have valid column data before creating DataFrame
+            if not columns_data:
+                st.warning("No column information available")
+                return
+                
+            try:
+                # Convert columns data to DataFrame for display
+                columns_df = pd.DataFrame(columns_data)
+                
+                # Define display columns and ensure they exist in the data
+                display_columns = {
+                    "name": "Column Name",
+                    "data_type": "Data Type",
+                    "max_length": "Max Length",
+                    "is_nullable": "Nullable",
+                    "is_primary_key": "Primary Key",
+                    "is_foreign_key": "Foreign Key"
+                }
+                
+                # Filter to only existing columns
+                available_columns = [col for col in display_columns.keys() if col in columns_df.columns]
+                if not available_columns:
+                    st.error("No valid columns found in the data")
+                    return
+                    
+                # Create display DataFrame with only available columns
+                display_df = columns_df[available_columns].rename(
+                    columns={col: display_columns[col] for col in available_columns}
+                )
+                st.dataframe(display_df)
+                
+                # Display foreign key relationships if any exist
+                fk_columns = [col for col in columns_data if col.get("is_foreign_key")]
+                if fk_columns:
+                    st.subheader("Foreign Key Relationships")
+                    for col in fk_columns:
+                        ref = col.get("foreign_key_reference", {})
+                        if ref:
+                            st.write(f"• {col['name']} → {ref.get('schema', '')}.{ref.get('table', '')}.{ref.get('column', '')}")
+                
+                # Display sample data button
+                if st.button("Show Sample Data"):
+                    sample_result = asyncio.run(
+                        st.session_state.orchestrator.process({
+                            "workflow": "data_analysis",
+                            "action": "execute_query",
+                            "parameters": {
+                                "query": f"SELECT TOP 10 * FROM {selected_schema}.{selected_table}"
+                            }
+                        })
+                    )
+                    
+                    if sample_result.get("success") and sample_result.get("data"):
+                        st.write("Sample Data:")
+                        # Convert list of dicts to DataFrame for display
+                        sample_df = pd.DataFrame(sample_result["data"])
+                        st.dataframe(sample_df)
+                    else:
+                        st.error(f"Failed to get sample data: {sample_result.get('error')}")
+                        
+            except Exception as e:
+                st.error(f"Error processing column data: {str(e)}")
+                logger.error(f"Error in schema explorer: {str(e)}", exc_info=True)
+                
+    except Exception as e:
+        st.error(f"Error processing schema data: {str(e)}")
+        logger.error(f"Error in schema explorer: {str(e)}", exc_info=True)
 
 def sales_analysis():
     st.header("Sales Analysis")

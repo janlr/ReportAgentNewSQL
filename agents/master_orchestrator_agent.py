@@ -10,13 +10,14 @@ from .user_interface_agent import UserInterfaceAgent
 from .report_generator_agent import ReportGeneratorAgent
 from .insight_generator_agent import InsightGeneratorAgent
 from .assistant_agent import AssistantAgent
+from .visualization_agent import VisualizationAgent
 
 class MasterOrchestratorAgent(BaseAgent):
     """Agent responsible for coordinating all other agents."""
     
     def __init__(self, config: Dict[str, Any], output_dir: str, anthropic_api_key: str):
         """Initialize the orchestrator."""
-        super().__init__("master_orchestrator_agent")
+        super().__init__("master_orchestrator_agent", config)
         self.config = config
         self.output_dir = Path(output_dir)
         self.anthropic_api_key = anthropic_api_key
@@ -26,6 +27,7 @@ class MasterOrchestratorAgent(BaseAgent):
             "database": DatabaseAgent(config["database"]),
             "data_manager": DataManagerAgent(config["data_manager"]),
             "user_interface": UserInterfaceAgent(config["user_interface"]),
+            "visualization": VisualizationAgent(config["visualization"]),
             "report_generator": ReportGeneratorAgent(
                 config=config["report_generator"]["config"],
                 output_dir=config["report_generator"]["output_dir"],
@@ -37,44 +39,36 @@ class MasterOrchestratorAgent(BaseAgent):
         self.workflow_history = []
     
     async def initialize(self) -> bool:
-        """Initialize the master orchestrator and all sub-agents."""
+        """Initialize all agents."""
         try:
             self.logger.info("Initializing database agent...")
             if not await self.agents["database"].initialize():
-                self.logger.error("Failed to initialize database agent")
-                return False
-            
-            self.logger.info("Initializing data manager agent...")
-            if not await self.agents["data_manager"].initialize():
-                self.logger.error("Failed to initialize data manager agent")
-                return False
-            
-            self.logger.info("Initializing user interface agent...")
-            if not await self.agents["user_interface"].initialize():
-                self.logger.error("Failed to initialize user interface agent")
-                return False
-            
-            self.logger.info("Initializing report generator agent...")
+                raise RuntimeError("Failed to initialize database agent")
+
+            self.logger.info("Initializing visualization agent...")
+            if not await self.agents["visualization"].initialize():
+                raise RuntimeError("Failed to initialize visualization agent")
+
+            self.logger.info("Initializing report generator...")
             if not await self.agents["report_generator"].initialize():
-                self.logger.error("Failed to initialize report generator agent")
-                return False
-            
-            self.logger.info("Initializing insight generator agent...")
-            if not await self.agents["insight_generator"].initialize():
-                self.logger.error("Failed to initialize insight generator agent")
-                return False
-            
-            self.logger.info("Initializing assistant agent...")
-            if not await self.agents["assistant"].initialize():
-                self.logger.error("Failed to initialize assistant agent")
-                return False
-            
-            self.logger.info("All agents initialized successfully")
+                raise RuntimeError("Failed to initialize report generator")
+
+            # Make insight generator optional
+            self.logger.info("Initializing insight generator...")
+            try:
+                if not await self.agents["insight_generator"].initialize():
+                    self.logger.warning("Failed to initialize insight generator, but continuing anyway")
+            except Exception as e:
+                self.logger.warning(f"Failed to initialize insight generator: {str(e)}")
+                self.logger.warning("Continuing without insight generation capabilities")
+
+            self.logger.info("All required agents initialized successfully")
             return True
-            
+
         except Exception as e:
-            self.logger.error(f"Error in master orchestrator initialization: {str(e)}")
-            return False
+            self.logger.error(f"Failed to initialize agents: {str(e)}", exc_info=True)
+            # Re-raise with more context
+            raise RuntimeError(f"Master orchestrator initialization failed: {str(e)}") from e
     
     async def process(self, input_data: Dict[str, Any]) -> Dict[str, Any]:
         """Process workflow requests."""

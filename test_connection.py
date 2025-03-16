@@ -1,35 +1,52 @@
-from sqlalchemy import create_engine, text
+import pyodbc
 import os
 from dotenv import load_dotenv
-from agents import DatabaseAgent
 
-def main():
+def test_connection():
     # Load environment variables
     load_dotenv()
     
-    # Build connection string for Windows Authentication
-    connection_string = (
-        "mssql+pyodbc://LAPTOP-R5KN1453\\SQLEXPRESS/AdventureWorksDW2022?"
-        "driver=ODBC+Driver+17+for+SQL+Server&trusted_connection=yes"
-    )
+    # Print SQL Server information
+    print("Available SQL Server Drivers:")
+    for driver in pyodbc.drivers():
+        print(f"  - {driver}")
     
-    print(f"Attempting to connect with connection string: {connection_string}")
+    print("\nTrying to connect...")
     
     try:
-        # Create engine
-        engine = create_engine(connection_string, echo=os.getenv('DB_ECHO', 'True').lower() == 'true')
+        # Build connection string directly with pyodbc
+        conn_str = (
+            "Driver={ODBC Driver 17 for SQL Server};"
+            f"Server={os.getenv('DB_HOST')};"
+            f"Database={os.getenv('DB_NAME')};"
+            "Trusted_Connection=yes;"
+            "TrustServerCertificate=yes"
+        )
         
-        # Test connection by executing a simple query
-        with engine.connect() as conn:
-            result = conn.execute(text("SELECT TOP 5 * FROM DimCustomer"))
-            for row in result:
-                print(row)
-                
-        print("Successfully connected to database!")
+        print(f"\nConnection String (without sensitive data):")
+        print(conn_str)
+        
+        # Try to connect
+        conn = pyodbc.connect(conn_str, timeout=30)
+        cursor = conn.cursor()
+        
+        # Test the connection
+        cursor.execute("SELECT @@version")
+        row = cursor.fetchone()
+        print("\nSuccess! Connected to SQL Server")
+        print(f"SQL Server Version: {row[0]}")
+        
+        cursor.close()
+        conn.close()
         
     except Exception as e:
-        print(f"Error initializing database connection: {str(e)}")
-        print("Failed to connect to database")
+        print("\nConnection Failed!")
+        print(f"Error: {str(e)}")
+        print("\nPlease verify:")
+        print("1. SQL Server is running")
+        print("2. Instance name is correct")
+        print("3. Windows Authentication is enabled")
+        print("4. SQL Server Browser service is running (for named instances)")
 
 if __name__ == "__main__":
-    main() 
+    test_connection() 
