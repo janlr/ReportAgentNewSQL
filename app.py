@@ -219,7 +219,7 @@ def main():
     st.sidebar.title("Navigation")
     page = st.sidebar.selectbox(
         "Choose a page", 
-        ["Schema Explorer", "Schema Configuration", "Sales Analysis", "Report Generator", "Data Visualization"]
+        ["Schema Explorer", "Schema Configuration", "Report Generator", "Data Visualization"]
     )
     
     try:
@@ -227,8 +227,6 @@ def main():
             schema_explorer()
         elif page == "Schema Configuration":
             schema_configuration()
-        elif page == "Sales Analysis":
-            sales_analysis()
         elif page == "Report Generator":
             report_generator()
         elif page == "Data Visualization":
