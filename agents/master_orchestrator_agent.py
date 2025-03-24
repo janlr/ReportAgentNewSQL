@@ -179,8 +179,11 @@ class MasterOrchestratorAgent(BaseAgent):
             parameters = input_data.get("parameters", {})
             
             if action == "get_schema_info":
+                # Pass table_name and schema_name parameters if provided
                 return await self.agents["database"].process({
-                    "action": "get_schema_info"
+                    "action": "get_schema_info",
+                    "table_name": parameters.get("table_name"),
+                    "schema_name": parameters.get("schema_name", "dbo")
                 })
             
             elif action == "get_product_categories":
@@ -228,11 +231,16 @@ class MasterOrchestratorAgent(BaseAgent):
             
             elif action == "execute_query":
                 # Execute a query
-                return await self.agents["database"].process({
+                query_params = {
                     "action": "execute_query",
-                    "query": parameters.get("query"),
-                    "params": parameters.get("params", {})
-                })
+                    "query": parameters.get("query")
+                }
+                
+                # Only add params if they exist
+                if parameters.get("params"):
+                    query_params["params"] = parameters.get("params")
+                
+                return await self.agents["database"].process(query_params)
             
             else:
                 raise ValueError(f"Unknown data analysis action: {action}")
@@ -400,6 +408,78 @@ class MasterOrchestratorAgent(BaseAgent):
         except Exception as e:
             self.logger.error(f"Error in data visualization workflow: {str(e)}")
             return await self._handle_agent_error("data_visualization", e)
+
+    async def _handle_schema_configuration(self, input_data: Dict[str, Any]) -> Dict[str, Any]:
+        """Handle schema configuration workflow."""
+        try:
+            action = input_data.get("action")
+            parameters = input_data.get("parameters", {})
+            
+            if action == "get_join_patterns":
+                # Forward the request to the database agent
+                return await self.agents["database"].process({
+                    "action": "get_join_patterns",
+                    "parameters": parameters
+                })
+            elif action == "configure_schema":
+                # Get schema information from database
+                schema_result = await self.agents["database"].process({
+                    "action": "get_schema_info"
+                })
+                
+                if not schema_result.get("success"):
+                    return schema_result
+                
+                schema_info = schema_result.get("data", {})
+                
+                # Analyze tables and suggest categories
+                table_categories = {
+                    "fact_tables": [],
+                    "dimension_tables": [],
+                    "lookup_tables": [],
+                    "transaction_tables": []
+                }
+                
+                # Simple categorization based on naming conventions and structure
+                for table in schema_info.get("tables", []):
+                    table_name = table["name"].lower()
+                    if "fact" in table_name or "sales" in table_name or "orders" in table_name:
+                        table_categories["fact_tables"].append(f"{table['schema']}.{table['name']}")
+                    elif "dim" in table_name or "dimension" in table_name:
+                        table_categories["dimension_tables"].append(f"{table['schema']}.{table['name']}")
+                    elif table.get("column_count", 0) <= 5:  # Simple heuristic for lookup tables
+                        table_categories["lookup_tables"].append(f"{table['schema']}.{table['name']}")
+                    elif "transaction" in table_name or "history" in table_name:
+                        table_categories["transaction_tables"].append(f"{table['schema']}.{table['name']}")
+                
+                # Get join patterns for fact tables
+                join_patterns = []
+                for fact_table in table_categories["fact_tables"]:
+                    schema_name, table_name = fact_table.split(".")
+                    join_result = await self.agents["database"].process({
+                        "action": "get_join_patterns",
+                        "parameters": {
+                            "table_name": table_name,
+                            "schema_name": schema_name
+                        }
+                    })
+                    
+                    if join_result.get("success"):
+                        join_patterns.extend(join_result["data"].get("join_patterns", []))
+                
+                return {
+                    "success": True,
+                    "data": {
+                        "table_categories": table_categories,
+                        "join_patterns": join_patterns
+                    }
+                }
+            else:
+                raise ValueError(f"Unknown action for schema configuration workflow: {action}")
+                
+        except Exception as e:
+            self.logger.error(f"Error in schema configuration workflow: {str(e)}")
+            return {"success": False, "error": str(e)}
 
     async def _handle_agent_error(self, agent_name: str, error: Exception) -> Dict[str, Any]:
         """Handle agent errors gracefully."""
