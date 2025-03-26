@@ -119,7 +119,7 @@ class DatabaseAgent(BaseAgent):
         try:
             if not self.connection:
                 raise RuntimeError("Database connection not initialized")
-                
+            
             action = input_data.get("action")
             if not action:
                 raise ValueError("No action specified")
@@ -143,7 +143,7 @@ class DatabaseAgent(BaseAgent):
                 )
             else:
                 raise ValueError(f"Unknown action: {action}")
-                
+            
         except Exception as e:
             self.logger.error(f"Error processing database operation: {str(e)}")
             return {"success": False, "error": str(e)}
@@ -182,8 +182,8 @@ class DatabaseAgent(BaseAgent):
                     "columns": columns
                 })
             
-                return {
-                    "success": True,
+            return {
+                "success": True,
                 "data": {
                     "tables": tables
                 }
@@ -198,7 +198,7 @@ class DatabaseAgent(BaseAgent):
         try:
             if not query:
                 raise ValueError("No query provided")
-                
+            
             cursor = self.connection.cursor()
             
             # Execute query with or without parameters
@@ -241,13 +241,12 @@ class DatabaseAgent(BaseAgent):
             
             # For other queries, commit and return success
             self.connection.commit()
-                return {
-                    "success": True,
+            return {
+                "success": True,
                 "data": {
                     "rows_affected": cursor.rowcount
                 }
             }
-                
         except Exception as e:
             self.logger.error(f"Error executing query: {str(e)}")
             return {"success": False, "error": str(e)}
@@ -261,11 +260,11 @@ class DatabaseAgent(BaseAgent):
             if table_name:
                 # Check if table is a system table
                 if table_name in self.system_tables:
-            return {
-                "success": False,
+                    return {
+                        "success": False,
                         "error": f"Access to system table '{table_name}' is not allowed"
                     }
-                    
+                
                 # First get basic column information
                 query = """
                 SELECT 
@@ -279,10 +278,10 @@ class DatabaseAgent(BaseAgent):
                 ORDER BY ORDINAL_POSITION
                 """
                 cursor.execute(query, (schema_name, table_name))
-                            
-                            columns = []
+                
+                columns = []
                 for row in cursor.fetchall():
-                                columns.append({
+                    columns.append({
                         "name": row[0],
                         "data_type": row[1],
                         "max_length": row[2],
@@ -293,8 +292,8 @@ class DatabaseAgent(BaseAgent):
                 
                 # Get foreign key information
                 try:
-                            fk_query = """
-                            SELECT 
+                    fk_query = """
+                    SELECT 
                         COL_NAME(fc.parent_object_id, fc.parent_column_id) as column_name,
                         OBJECT_SCHEMA_NAME(f.referenced_object_id) as referenced_schema,
                         OBJECT_NAME(f.referenced_object_id) as referenced_table,
@@ -317,7 +316,7 @@ class DatabaseAgent(BaseAgent):
                                     "column": fk_row[3]
                                 }
                                 break
-        except Exception as e:
+                except Exception as e:
                     self.logger.warning(f"Error getting foreign key info: {str(e)}")
                 
                 # Get primary key information
@@ -337,7 +336,7 @@ class DatabaseAgent(BaseAgent):
                             if col["name"] == pk_column:
                                 col["is_primary_key"] = "YES"
                                 break
-        except Exception as e:
+                except Exception as e:
                     self.logger.warning(f"Error getting primary key info: {str(e)}")
                 
                 return {
@@ -378,8 +377,8 @@ class DatabaseAgent(BaseAgent):
                         "columns": columns
                     })
                 
-        return {
-            "success": True,
+                return {
+                    "success": True,
                     "data": {
                         "tables": tables
                     }
@@ -502,12 +501,11 @@ class DatabaseAgent(BaseAgent):
                     }
                     if child_data not in hierarchy[parent_key]["children"]:
                         hierarchy[parent_key]["children"].append(child_data)
-                
-                return {
-                    "success": True,
+            
+            return {
+                "success": True,
                 "data": list(hierarchy.values())
-                }
-                
+            }
         except Exception as e:
             self.logger.error(f"Error getting hierarchical data: {str(e)}")
             return {"success": False, "error": str(e)}
@@ -523,7 +521,7 @@ class DatabaseAgent(BaseAgent):
             
             # Query to get foreign keys where this table is the source
             outgoing_fk_query = """
-        SELECT 
+            SELECT 
                 fk.name AS constraint_name,
                 OBJECT_SCHEMA_NAME(fk.parent_object_id) AS source_schema,
                 OBJECT_NAME(fk.parent_object_id) AS source_table,
@@ -541,7 +539,7 @@ class DatabaseAgent(BaseAgent):
             
             # Query to get foreign keys where this table is the target
             incoming_fk_query = """
-        SELECT 
+            SELECT 
                 fk.name AS constraint_name,
                 OBJECT_SCHEMA_NAME(fk.parent_object_id) AS source_schema,
                 OBJECT_NAME(fk.parent_object_id) AS source_table,
@@ -603,16 +601,15 @@ class DatabaseAgent(BaseAgent):
                     })
                 
                 join_patterns.append(pattern)
-                    
-                    return {
-                        "success": True,
+            
+            return {
+                "success": True,
                 "data": {
                     "table_name": table_name,
                     "schema_name": schema_name,
                     "join_patterns": join_patterns
                 }
-                    }
-                
+            }
         except Exception as e:
             self.logger.error(f"Error getting join patterns for table {table_name}: {str(e)}")
             return {"success": False, "error": str(e)} 

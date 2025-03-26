@@ -29,94 +29,133 @@ class SchemaConfigurator:
                 "action": "get_schema_info"
             })
             
-            if not schema_result.get("success"):
-                raise Exception(f"Failed to get schema info: {schema_result.get('error')}")
+            if not schema_result.get("success", False):
+                self.logger.error(f"Failed to get schema info: {schema_result.get('error', 'Unknown error')}")
+                return {
+                    "success": False,
+                    "error": f"Failed to get schema info: {schema_result.get('error', 'Unknown error')}"
+                }
             
-            schema_info = schema_result["data"]
+            schema_data = schema_result.get("data", {})
             
-            # Initialize configuration
+            # Validate schema data
+            if not isinstance(schema_data, dict):
+                self.logger.error("Schema data must be a dictionary")
+                return {
+                    "success": False,
+                    "error": "Schema data must be a dictionary"
+                }
+            
+            tables = schema_data.get("tables", [])
+            if not isinstance(tables, list):
+                self.logger.error("Tables must be a list")
+                return {
+                    "success": False,
+                    "error": "Tables must be a list"
+                }
+            
+            # Process tables
+            processed_tables = {}
+            relationships = []
+            
+            for table in tables:
+                if not isinstance(table, dict):
+                    continue
+                
+                table_name = table.get("name", "")
+                schema_name = table.get("schema", "dbo")
+                
+                # Get detailed table information
+                table_info = await self.database_agent.process({
+                    "action": "get_schema_info",
+                    "table_name": table_name,
+                    "schema_name": schema_name
+                })
+                
+                if not table_info.get("success", False):
+                    self.logger.warning(f"Failed to get table info for {schema_name}.{table_name}: {table_info.get('error', 'Unknown error')}")
+                    continue
+                
+                table_data = table_info.get("data", {})
+                columns = table_data.get("columns", [])
+                
+                if not isinstance(columns, list):
+                    continue
+                
+                processed_table = {
+                    "name": table_name,
+                    "schema": schema_name,
+                    "columns": {},
+                    "primary_keys": [],
+                    "foreign_keys": []
+                }
+                
+                for column in columns:
+                    if not isinstance(column, dict):
+                        continue
+                    
+                    column_name = column.get("name", "")
+                    processed_table["columns"][column_name] = {
+                        "type": column.get("data_type", ""),
+                        "nullable": column.get("is_nullable", True),
+                        "primary_key": column.get("is_primary_key", False) == "YES",
+                        "foreign_key": column.get("is_foreign_key", False) == "YES"
+                    }
+                    
+                    if processed_table["columns"][column_name]["primary_key"]:
+                        processed_table["primary_keys"].append(column_name)
+                    
+                    if processed_table["columns"][column_name]["foreign_key"]:
+                        fk_ref = column.get("foreign_key_reference", {})
+                        if isinstance(fk_ref, dict):
+                            relationships.append({
+                                "source_table": table_name,
+                                "source_column": column_name,
+                                "target_table": fk_ref.get("table", ""),
+                                "target_column": fk_ref.get("column", ""),
+                                "target_schema": fk_ref.get("schema", "")
+                            })
+                
+                processed_tables[f"{schema_name}.{table_name}"] = processed_table
+            
+            # Get table relationships
+            table_relationships = self.get_table_relationships(processed_tables, relationships)
+            
+            # Suggest table categorization
+            table_categories = self._suggest_table_categories(processed_tables, table_relationships)
+            
+            # Suggest join patterns
+            join_patterns = self._suggest_join_patterns(processed_tables, table_relationships)
+            
+            # Suggest common query patterns
+            query_patterns = self._suggest_query_patterns(processed_tables, table_relationships, table_categories)
+            
+            # Create final configuration
             config = {
-                "sales": {
-                    "orders_table": "",
-                    "order_details_table": "",
-                    "products_table": "",
-                    "categories_table": "",
-                    "customers_table": "",
-                    "territories_table": "",
-                    "column_mapping": {}
+                "success": True,
+                "data": {
+                    "tables": processed_tables,
+                    "relationships": table_relationships,
+                    "table_categories": table_categories,
+                    "join_patterns": join_patterns,
+                    "query_patterns": query_patterns
                 }
             }
-            
-            # Find relevant tables
-            for full_table_name, table_info in schema_info["tables"].items():
-                table_name = table_info["name"].lower()
-                columns = table_info["columns"]
-                
-                # Map tables based on name patterns
-                if "order" in table_name and "header" in table_name:
-                    config["sales"]["orders_table"] = full_table_name
-                    # Map common order columns
-                    for col in columns:
-                        col_name = col["name"].lower()
-                        if "date" in col_name and "order" in col_name:
-                            config["sales"]["column_mapping"]["order_date"] = col["name"]
-                        elif "orderid" in col_name.replace("_", ""):
-                            config["sales"]["column_mapping"]["order_id"] = col["name"]
-                
-                elif "order" in table_name and "detail" in table_name:
-                    config["sales"]["order_details_table"] = full_table_name
-                    # Map detail columns
-                    for col in columns:
-                        col_name = col["name"].lower()
-                        if "quantity" in col_name or "qty" in col_name:
-                            config["sales"]["column_mapping"]["quantity"] = col["name"]
-                        elif "price" in col_name and "unit" in col_name:
-                            config["sales"]["column_mapping"]["unit_price"] = col["name"]
-                        elif "total" in col_name and ("line" in col_name or "amount" in col_name):
-                            config["sales"]["column_mapping"]["total_amount"] = col["name"]
-                
-                elif "product" in table_name and "category" in table_name:
-                    config["sales"]["categories_table"] = full_table_name
-                
-                elif "product" in table_name and "category" not in table_name:
-                    config["sales"]["products_table"] = full_table_name
-                    # Map product columns
-                    for col in columns:
-                        col_name = col["name"].lower()
-                        if "name" in col_name and "product" not in col_name:
-                            config["sales"]["column_mapping"]["product_name"] = col["name"]
-                        elif "productid" in col_name.replace("_", ""):
-                            config["sales"]["column_mapping"]["product_id"] = col["name"]
-                
-                elif "customer" in table_name:
-                    config["sales"]["customers_table"] = full_table_name
-                    # Map customer columns
-                    for col in columns:
-                        col_name = col["name"].lower()
-                        if "customerid" in col_name.replace("_", ""):
-                            config["sales"]["column_mapping"]["customer_id"] = col["name"]
-                
-                elif "territory" in table_name:
-                    config["sales"]["territories_table"] = full_table_name
-                    # Map territory columns
-                    for col in columns:
-                        col_name = col["name"].lower()
-                        if "territoryid" in col_name.replace("_", ""):
-                            config["sales"]["column_mapping"]["territory_id"] = col["name"]
-                        elif "name" in col_name:
-                            config["sales"]["column_mapping"]["territory_name"] = col["name"]
-                        elif "region" in col_name and "code" in col_name:
-                            config["sales"]["column_mapping"]["region_code"] = col["name"]
-            
-            # Validate the configuration
-            if not await self.database_agent.validate_schema_mapping(config):
-                raise Exception("Schema mapping validation failed")
             
             return config
             
         except Exception as e:
-            self.logger.error(f"Error configuring schema: {str(e)}")
-            raise
+            self.logger.error(f"Failed to configure schema: {str(e)}")
+            return {"success": False, "error": f"Failed to configure schema: {str(e)}"}
+            
+    @staticmethod
+    def get_table_relationships(tables: Dict[str, Any], relationships: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+        """Extract relationships between tables from schema data."""
+        try:
+            return relationships
+        except Exception as e:
+            logging.error(f"Error extracting relationships: {str(e)}")
+            return []
 
     def _suggest_mappings(self, schema_info: Dict[str, Any]) -> Dict[str, Any]:
         """Suggest schema mappings using advanced heuristics."""
@@ -705,6 +744,199 @@ class SchemaConfigurator:
         # Organizational hierarchies
         
         return hierarchies
+
+    def _suggest_table_categories(self, tables: Dict[str, Any], relationships: List[Dict[str, Any]]) -> Dict[str, List[str]]:
+        """Suggest categorization of tables (fact tables, dimension tables, etc.)."""
+        try:
+            fact_tables = []
+            dimension_tables = []
+            lookup_tables = []
+            bridge_tables = []
+            
+            for table_name, table_info in tables.items():
+                # Count incoming and outgoing relationships
+                incoming = 0
+                outgoing = 0
+                
+                for rel in relationships:
+                    source = f"{rel.get('source_schema', 'dbo')}.{rel['source_table']}"
+                    target = f"{rel.get('target_schema', 'dbo')}.{rel['target_table']}"
+                    
+                    if source == table_name:
+                        outgoing += 1
+                    if target == table_name:
+                        incoming += 1
+                
+                # Analyze column types and names
+                column_count = len(table_info["columns"])
+                has_date_columns = any("date" in col.lower() for col in table_info["columns"])
+                has_quantity_columns = any(any(qty in col.lower() for qty in ["qty", "quantity", "amount", "total", "sum"]) 
+                                          for col in table_info["columns"])
+                has_id_columns = len([col for col in table_info["columns"] if "id" in col.lower() or "key" in col.lower()]) > 1
+                
+                # Categorize based on heuristics
+                if incoming > outgoing and has_date_columns and has_quantity_columns:
+                    fact_tables.append(table_name)
+                elif outgoing > incoming and has_id_columns:
+                    dimension_tables.append(table_name)
+                elif column_count <= 5 and has_id_columns:
+                    lookup_tables.append(table_name)
+                elif incoming > 1 and outgoing > 1:
+                    bridge_tables.append(table_name)
+                else:
+                    # Default to dimension if not categorized
+                    dimension_tables.append(table_name)
+            
+            return {
+                "fact_tables": fact_tables,
+                "dimension_tables": dimension_tables,
+                "lookup_tables": lookup_tables,
+                "bridge_tables": bridge_tables
+            }
+            
+        except Exception as e:
+            self.logger.error(f"Error suggesting table categories: {str(e)}")
+            return {
+                "fact_tables": [],
+                "dimension_tables": [],
+                "lookup_tables": [],
+                "bridge_tables": []
+            }
+    
+    def _suggest_join_patterns(self, tables: Dict[str, Any], relationships: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+        """Suggest common join patterns between tables."""
+        try:
+            join_patterns = []
+            
+            # Create join patterns for each fact table with its related dimension tables
+            for fact_table in self._suggest_table_categories(tables, relationships)["fact_tables"]:
+                related_tables = []
+                
+                # Find directly related tables
+                for rel in relationships:
+                    source = f"{rel.get('source_schema', 'dbo')}.{rel['source_table']}"
+                    target = f"{rel.get('target_schema', 'dbo')}.{rel['target_table']}"
+                    
+                    if source == fact_table:
+                        related_tables.append({
+                            "table": target,
+                            "join_type": "INNER JOIN",
+                            "source_column": rel["source_column"],
+                            "target_column": rel["target_column"]
+                        })
+                    elif target == fact_table:
+                        related_tables.append({
+                            "table": source,
+                            "join_type": "INNER JOIN",
+                            "source_column": rel["target_column"],
+                            "target_column": rel["source_column"]
+                        })
+                
+                if related_tables:
+                    join_patterns.append({
+                        "base_table": fact_table,
+                        "related_tables": related_tables,
+                        "description": f"Join pattern for {fact_table.split('.')[-1]} analysis"
+                    })
+            
+            return join_patterns
+            
+        except Exception as e:
+            self.logger.error(f"Error suggesting join patterns: {str(e)}")
+            return []
+    
+    def _suggest_query_patterns(self, tables: Dict[str, Any], relationships: List[Dict[str, Any]], 
+                               table_categories: Dict[str, List[str]]) -> List[Dict[str, Any]]:
+        """Suggest common query patterns based on schema structure."""
+        try:
+            query_patterns = []
+            
+            # For each fact table, create sample queries
+            for fact_table in table_categories["fact_tables"]:
+                table_name = fact_table.split(".")[-1]
+                schema_name = fact_table.split(".")[0]
+                
+                # Find date columns for time-based analysis
+                date_columns = []
+                measure_columns = []
+                
+                if fact_table in tables:
+                    for col_name, col_info in tables[fact_table]["columns"].items():
+                        if "date" in col_name.lower() or "time" in col_name.lower():
+                            date_columns.append(col_name)
+                        elif any(term in col_name.lower() for term in ["amount", "total", "sum", "quantity", "qty", "price", "cost"]):
+                            measure_columns.append(col_name)
+                
+                # Find related dimension tables
+                related_dims = []
+                for rel in relationships:
+                    source = f"{rel.get('source_schema', 'dbo')}.{rel['source_table']}"
+                    target = f"{rel.get('target_schema', 'dbo')}.{rel['target_table']}"
+                    
+                    if source == fact_table and target in table_categories["dimension_tables"]:
+                        related_dims.append({
+                            "table": target,
+                            "join_column": rel["target_column"],
+                            "fact_column": rel["source_column"]
+                        })
+                
+                # Create time-based analysis query if date columns exist
+                if date_columns and measure_columns:
+                    date_col = date_columns[0]
+                    measure_col = measure_columns[0]
+                    
+                    query = f"""
+                    SELECT 
+                        DATEPART(year, {date_col}) as Year,
+                        DATEPART(month, {date_col}) as Month,
+                        SUM({measure_col}) as Total{measure_col.replace('_', '')}
+                    FROM {schema_name}.{table_name}
+                    GROUP BY DATEPART(year, {date_col}), DATEPART(month, {date_col})
+                    ORDER BY Year, Month
+                    """
+                    
+                    query_patterns.append({
+                        "name": f"Time-based {table_name} Analysis",
+                        "description": f"Analyze {measure_col} by year and month",
+                        "query": query
+                    })
+                
+                # Create dimension analysis if related dimensions exist
+                if related_dims and measure_columns:
+                    dim = related_dims[0]
+                    dim_table = dim["table"].split(".")[-1]
+                    dim_schema = dim["table"].split(".")[0]
+                    measure_col = measure_columns[0]
+                    
+                    # Try to find a name column in the dimension table
+                    name_col = dim["join_column"]
+                    if dim["table"] in tables:
+                        for col in tables[dim["table"]]["columns"]:
+                            if "name" in col.lower():
+                                name_col = col
+                                break
+                    
+                    query = f"""
+                    SELECT 
+                        d.{name_col} as {dim_table}Name,
+                        SUM(f.{measure_col}) as Total{measure_col.replace('_', '')}
+                    FROM {schema_name}.{table_name} f
+                    JOIN {dim_schema}.{dim_table} d ON f.{dim['fact_column']} = d.{dim['join_column']}
+                    GROUP BY d.{name_col}
+                    ORDER BY Total{measure_col.replace('_', '')} DESC
+                    """
+                    
+                    query_patterns.append({
+                        "name": f"{table_name} by {dim_table} Analysis",
+                        "description": f"Analyze {measure_col} by {dim_table}",
+                        "query": query
+                    })
+            
+            return query_patterns
+            
+        except Exception as e:
+            self.logger.error(f"Error suggesting query patterns: {str(e)}")
+            return []
 
 class CustomValidationRule:
     def __init__(self, name: str, validation_func: Callable, error_message: str):

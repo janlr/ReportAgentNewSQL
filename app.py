@@ -84,111 +84,28 @@ def init_session_state():
 
 # Initialize components
 async def init_components():
+    """Initialize application components."""
     try:
-        # Load configuration
-        config = {
-            "database": {
-                "type": "mssql",
-                "host": os.getenv('DB_HOST'),
-                "port": int(os.getenv('DB_PORT', '1433')),
-                "database": os.getenv('DB_NAME'),
-                "driver": os.getenv('DB_DRIVER'),
-                "trusted_connection": os.getenv('DB_TRUSTED_CONNECTION', 'yes'),
-                "user": os.getenv('DB_USER'),
-                "password": os.getenv('DB_PASSWORD'),
-                "echo": os.getenv('DB_ECHO', 'True').lower() == 'true',
-                "cache_dir": './cache/database'
-            },
-            "user_interface": {
-                "preferences_dir": "./preferences"
-            },
-            "report_generator": {
-                "config": {
-                    "template_dir": "./templates",
-                    "output_dir": "./reports"
-                },
-                "output_dir": "./reports"
-            },
-            "visualization": {
-                "theme": "plotly_white",
-                "default_height": 500,
-                "default_width": 800,
-                "cache_dir": "./cache/visualizations"
-            },
-            "insight_generator": {
-                "llm_manager": {
-                    "provider": "anthropic",
-                    "model": "claude-3-sonnet-20240229",
-                    "api_key": st.session_state.config['api_keys']['anthropic'],
-                    "cache_dir": "./cache/llm",
-                    "cache": {
-                        "enabled": True,
-                        "ttl": 3600,
-                        "max_size": 1000,
-                        "exact_match": True
-                    },
-                    "models": {
-                        "claude-3-sonnet-20240229": {
-                    "max_tokens": 1000,
-                            "temperature": 0.7,
-                            "cost_per_1k_tokens": 0.0
-                        }
-                    },
-                    "monitoring": {
-                        "enabled": True,
-                        "log_level": "INFO"
-                    },
-                    "cost_limits": {
-                        "daily": 10.0,
-                        "monthly": 100.0
-                    }
-                },
-                "cache_dir": "./cache/insights"
-            },
-            "data_manager": {
-                "cache_dir": "./cache/data",
-                "batch_size": 1000,
-                "max_workers": 4,
-                "cache_enabled": True,
-                "cache_ttl": 3600,
-                "max_retries": 3,
-                "data_validation": {
-                    "enabled": True,
-                    "strict_mode": False
-                },
-                "preprocessing": {
-                    "enabled": True,
-                    "handle_missing": True,
-                    "handle_outliers": True
-                }
-            }
-        }
-        
-        logger.info("Creating master orchestrator...")
-        output_dir = config["report_generator"]["output_dir"]
-        anthropic_api_key = st.session_state.config['api_keys']['anthropic']
-        
-        # Create orchestrator with required arguments and config
-        orchestrator = MasterOrchestratorAgent(
-            config=config,
-            output_dir=output_dir,
-            anthropic_api_key=anthropic_api_key
-        )
-        
-        logger.info("Initializing master orchestrator...")
-        try:
+        # Initialize orchestrator
+        orchestrator = MasterOrchestratorAgent(st.session_state.config)
         success = await orchestrator.initialize()
-        if not success:
-                raise RuntimeError("Master orchestrator initialization returned False")
-        except Exception as e:
-            logger.error(f"Master orchestrator initialization failed: {str(e)}", exc_info=True)
-            raise RuntimeError(f"Failed to initialize master orchestrator: {str(e)}")
         
-        logger.info("Master orchestrator initialized successfully")
-        return orchestrator
+        if not success:
+            st.error("Failed to initialize orchestrator")
+            return False
+            
+        # Store orchestrator in session state
+        st.session_state.orchestrator = orchestrator
+        
+        # Initialize other components
+        st.session_state.report_history = []
+        st.session_state.current_report = None
+        
+        return True
+        
     except Exception as e:
-        logger.error(f"Error initializing components: {str(e)}", exc_info=True)
-        raise
+        st.error(f"Error initializing components: {str(e)}")
+        return False
 
 def main():
     # Initialize session state first
@@ -200,7 +117,15 @@ def main():
     if "orchestrator" not in st.session_state:
         try:
             with st.spinner("Initializing application..."):
-        st.session_state.orchestrator = asyncio.run(init_components())
+                # Create and run the async initialization
+                loop = asyncio.new_event_loop()
+                asyncio.set_event_loop(loop)
+                success = loop.run_until_complete(init_components())
+                loop.close()
+                
+                if not success:
+                    st.error("Failed to initialize application components")
+                    return
         except Exception as e:
             error_msg = str(e)
             logger.error(f"Failed to initialize application: {error_msg}", exc_info=True)
@@ -222,19 +147,26 @@ def main():
     )
     
     try:
+        # Create event loop for async operations
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
+        
         if page == "Schema Explorer":
-            schema_explorer()
+            loop.run_until_complete(schema_explorer())
         elif page == "Schema Configuration":
             schema_configuration()
         elif page == "Report Generator":
             report_generator()
         elif page == "Data Visualization":
             data_visualization()
+            
+        # Close the event loop
+        loop.close()
     except Exception as e:
         logger.error(f"Error in application: {str(e)}")
         st.error(f"An error occurred: {str(e)}")
 
-def schema_explorer():
+async def schema_explorer():
     st.header("Database Schema Explorer")
     
     # Disable Streamlit's automatic number formatting for this page
@@ -248,21 +180,19 @@ def schema_explorer():
     """, unsafe_allow_html=True)
     
     try:
-    # Get schema information through orchestrator
-    result = asyncio.run(
-        st.session_state.orchestrator.process({
+        # Get schema information through orchestrator
+        result = await st.session_state.orchestrator.process({
             "workflow": "data_analysis",
             "action": "get_schema_info"
         })
-    )
-    
-    if not result.get("success"):
-        st.error(f"Failed to get schema information: {result.get('error')}")
-        return
+        
+        if not result.get("success"):
+            st.error(f"Failed to get schema information: {result.get('error')}")
+            return
         
         schema_info = result.get("data", {})
     
-    # Schema selection
+        # Schema selection
         if not schema_info or not isinstance(schema_info.get("tables"), list):
             st.error("No tables found in the database or invalid data format")
             return
@@ -274,15 +204,15 @@ def schema_explorer():
             st.error("No schemas found in the database")
             return
             
-    selected_schema = st.selectbox(
-        "Select Schema", 
-        schemas,
+        selected_schema = st.selectbox(
+            "Select Schema", 
+            schemas,
             key="schema_explorer_schema"
-    )
-    
-    # Display tables in selected schema
-    st.subheader(f"Tables in {selected_schema} Schema")
-    tables = [
+        )
+        
+        # Display tables in selected schema
+        st.subheader(f"Tables in {selected_schema} Schema")
+        tables = [
             table["name"] 
             for table in schema_info["tables"] 
             if table.get("schema") == selected_schema
@@ -301,16 +231,14 @@ def schema_explorer():
     if selected_table:
         try:
             # Get detailed schema information for the selected table
-            table_result = asyncio.run(
-                st.session_state.orchestrator.process({
-                    "workflow": "data_analysis",
-                    "action": "get_schema_info",
-                    "parameters": {
-                        "table_name": selected_table,
-                        "schema_name": selected_schema
-                    }
-                })
-            )
+            table_result = await st.session_state.orchestrator.process({
+                "workflow": "data_analysis",
+                "action": "get_schema_info",
+                "parameters": {
+                    "table_name": selected_table,
+                    "schema_name": selected_schema
+                }
+            })
             
             if not table_result.get("success"):
                 st.error(f"Failed to get table information: {table_result.get('error')}")
@@ -325,15 +253,13 @@ def schema_explorer():
                 if selected_table == "ProspectiveBuyer":
                     st.warning("ProspectiveBuyer table has special structure. Attempting direct query...")
                     # Try to get sample data directly
-                    sample_result = asyncio.run(
-                st.session_state.orchestrator.process({
-                    "workflow": "data_analysis",
-                    "action": "execute_query",
-                    "parameters": {
-                                "query": f"SELECT TOP 1 * FROM {selected_schema}.{selected_table}"
-                            }
-                        })
-                    )
+                    sample_result = await st.session_state.orchestrator.process({
+                        "workflow": "data_analysis",
+                        "action": "execute_query",
+                        "parameters": {
+                            "query": f"SELECT TOP 1 * FROM {selected_schema}.{selected_table}"
+                        }
+                    })
                     
                     if sample_result.get("success") and sample_result.get("data"):
                         st.write("Sample Data (showing column structure):")
@@ -352,22 +278,8 @@ def schema_explorer():
                             clean_data.append(clean_item)
                         
                         # Convert to DataFrame and display
-                        sample_df = pd.DataFrame(clean_data)
-                        st.dataframe(sample_df)
-                        
-                        # Create columns data from sample
-                        columns_data = []
-                        for col in sample_df.columns:
-                            columns_data.append({
-                                "name": col,
-                                "data_type": str(sample_df[col].dtype),
-                                "max_length": None,
-                                "is_nullable": "UNKNOWN", 
-                                "is_primary_key": "NO",
-                                "is_foreign_key": "NO"
-                            })
-                    else:
-                        st.error(f"Failed to get sample data: {sample_result.get('error')}")
+                        df = pd.DataFrame(clean_data)
+                        st.dataframe(df)
                         return
                 else:
                     st.warning("No column information available")
@@ -409,16 +321,14 @@ def schema_explorer():
                             st.write(f"• {col['name']} → {ref.get('schema', '')}.{ref.get('table', '')}.{ref.get('column', '')}")
                 
                 # Get and display join patterns
-                join_patterns_result = asyncio.run(
-                    st.session_state.orchestrator.process({
-                        "workflow": "schema_configuration",
-                        "action": "get_join_patterns",
-                        "parameters": {
-                            "table_name": selected_table,
-                            "schema_name": selected_schema
-                        }
-                    })
-                )
+                join_patterns_result = await st.session_state.orchestrator.process({
+                    "workflow": "schema_configuration",
+                    "action": "get_join_patterns",
+                    "parameters": {
+                        "table_name": selected_table,
+                        "schema_name": selected_schema
+                    }
+                })
                 
                 if join_patterns_result.get("success") and join_patterns_result.get("data", {}).get("join_patterns"):
                     st.subheader("Common Join Patterns")
@@ -478,15 +388,13 @@ WHERE {first_column} IN (
             
             with sample_tab:
                 if st.button("Load Sample Data"):
-                    sample_result = asyncio.run(
-                st.session_state.orchestrator.process({
-                    "workflow": "data_analysis",
-                            "action": "execute_query",
-                    "parameters": {
-                                "query": f"SELECT TOP 10 * FROM {selected_schema}.{selected_table}"
-                            }
-                        })
-                    )
+                    sample_result = await st.session_state.orchestrator.process({
+                        "workflow": "data_analysis",
+                        "action": "execute_query",
+                        "parameters": {
+                            "query": f"SELECT TOP 10 * FROM {selected_schema}.{selected_table}"
+                        }
+                    })
                     
                     if sample_result.get("success") and sample_result.get("data"):
                         clean_data = []
@@ -497,13 +405,13 @@ WHERE {first_column} IN (
                                     clean_item[key] = str(int(value))
                                 elif isinstance(value, float):
                                     clean_item[key] = str(value)
-            else:
+                                else:
                                     clean_item[key] = value
                             clean_data.append(clean_item)
                         
                         sample_df = pd.DataFrame(clean_data)
                         st.dataframe(sample_df)
-            else:
+                    else:
                         st.error(f"Failed to get sample data: {sample_result.get('error')}")
         except Exception as e:
             st.error(f"Error displaying table information: {str(e)}")
@@ -974,7 +882,7 @@ def schema_configuration():
                             st.write(f"- Join with {table['table']} using {table['source_column']} = {table['target_column']}")
                 else:
                     st.info("No join patterns found in the database")
-    except Exception as e:
+            except Exception as e:
                 st.error(f"Error getting join patterns: {str(e)}")
     
     with tab3:
