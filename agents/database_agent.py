@@ -252,140 +252,126 @@ class DatabaseAgent(BaseAgent):
             return {"success": False, "error": str(e)}
     
     async def _get_schema_info(self, table_name: Optional[str], schema_name: str = "dbo") -> Dict[str, Any]:
-        """Get detailed schema information for tables."""
+        """Get schema information for all tables or a specific table."""
+        cursor = None  # Initialize cursor to None
         try:
             cursor = self.connection.cursor()
-            
-            # If table_name is provided, get schema for specific table
+            tables = []
             if table_name:
-                # Check if table is a system table
-                if table_name in self.system_tables:
-                    return {
-                        "success": False,
-                        "error": f"Access to system table '{table_name}' is not allowed"
-                    }
-                
-                # First get basic column information
-                query = """
-                SELECT 
-                    COLUMN_NAME,
-                    DATA_TYPE,
-                    CHARACTER_MAXIMUM_LENGTH,
-                    IS_NULLABLE
-                FROM INFORMATION_SCHEMA.COLUMNS
-                WHERE TABLE_SCHEMA = ?
-                AND TABLE_NAME = ?
-                ORDER BY ORDINAL_POSITION
+                # Get info for a specific table
+                self.logger.info(f"Getting schema info for table: {schema_name}.{table_name}")
+                # Query to get column information
+                column_query = """
+                    SELECT 
+                        COLUMN_NAME, 
+                        DATA_TYPE, 
+                        IS_NULLABLE, 
+                        CHARACTER_MAXIMUM_LENGTH,
+                        NUMERIC_PRECISION, 
+                        NUMERIC_SCALE
+                    FROM INFORMATION_SCHEMA.COLUMNS
+                    WHERE TABLE_SCHEMA = ? AND TABLE_NAME = ?
+                    ORDER BY ORDINAL_POSITION;
                 """
-                cursor.execute(query, (schema_name, table_name))
-                
-                columns = []
+                cursor.execute(column_query, schema_name, table_name)
+                columns_data = []
                 for row in cursor.fetchall():
-                    columns.append({
+                    columns_data.append({
                         "name": row[0],
                         "data_type": row[1],
-                        "max_length": row[2],
-                        "is_nullable": "YES" if row[3] == "YES" else "NO",
-                        "is_primary_key": "NO",  # Will be updated later
-                        "is_foreign_key": "NO"   # Will be updated later
+                        "is_nullable": row[2],
+                        "max_length": row[3],
+                        "numeric_precision": row[4],
+                        "numeric_scale": row[5],
+                        "is_primary_key": "NO", # Default, will be updated later
+                        "is_foreign_key": "NO", # Default
+                        "foreign_key_reference": None
                     })
-                
-                # Get foreign key information
-                try:
-                    fk_query = """
-                    SELECT 
-                        COL_NAME(fc.parent_object_id, fc.parent_column_id) as column_name,
-                        OBJECT_SCHEMA_NAME(f.referenced_object_id) as referenced_schema,
-                        OBJECT_NAME(f.referenced_object_id) as referenced_table,
-                        COL_NAME(fc.referenced_object_id, fc.referenced_column_id) as referenced_column
-                    FROM sys.foreign_keys AS f
-                    INNER JOIN sys.foreign_key_columns AS fc 
-                        ON f.object_id = fc.constraint_object_id
-                    WHERE OBJECT_SCHEMA_NAME(f.parent_object_id) = ?
-                    AND OBJECT_NAME(f.parent_object_id) = ?
-                    """
-                    cursor.execute(fk_query, (schema_name, table_name))
-                    
-                    for fk_row in cursor.fetchall():
-                        for col in columns:
-                            if col["name"] == fk_row[0]:
-                                col["is_foreign_key"] = "YES"
-                                col["foreign_key_reference"] = {
-                                    "schema": fk_row[1],
-                                    "table": fk_row[2],
-                                    "column": fk_row[3]
-                                }
-                                break
-                except Exception as e:
-                    self.logger.warning(f"Error getting foreign key info: {str(e)}")
-                
-                # Get primary key information
-                try:
-                    pk_query = """
+
+                # Query to get primary key information
+                pk_query = """
                     SELECT COLUMN_NAME
                     FROM INFORMATION_SCHEMA.KEY_COLUMN_USAGE
-                    WHERE OBJECTPROPERTY(OBJECT_ID(CONSTRAINT_SCHEMA + '.' + CONSTRAINT_NAME), 'IsPrimaryKey') = 1
-                    AND TABLE_SCHEMA = ?
-                    AND TABLE_NAME = ?
-                    """
-                    cursor.execute(pk_query, (schema_name, table_name))
-                    
-                    for pk_row in cursor.fetchall():
-                        pk_column = pk_row[0]
-                        for col in columns:
-                            if col["name"] == pk_column:
-                                col["is_primary_key"] = "YES"
-                                break
-                except Exception as e:
-                    self.logger.warning(f"Error getting primary key info: {str(e)}")
-                
-                return {
-                    "success": True,
-                    "data": {
-                        "table_name": table_name,
-                        "schema_name": schema_name,
-                        "columns": columns
-                    }
-                }
+                    WHERE OBJECTPROPERTY(OBJECT_ID(CONSTRAINT_SCHEMA + '.' + QUOTENAME(CONSTRAINT_NAME)), 'IsPrimaryKey') = 1
+                    AND TABLE_SCHEMA = ? AND TABLE_NAME = ?;
+                """
+                try:
+                    cursor.execute(pk_query, schema_name, table_name)
+                    pk_columns = {row[0] for row in cursor.fetchall()}
+                    for col in columns_data:
+                        if col["name"] in pk_columns:
+                            col["is_primary_key"] = "YES"
+                except Exception as pk_err:
+                    self.logger.warning(f"Could not retrieve primary key info for {schema_name}.{table_name}: {pk_err}")
+
+                # Query to get foreign key information
+                fk_query = """
+                    SELECT 
+                        KCU.COLUMN_NAME,
+                        RC.UNIQUE_CONSTRAINT_SCHEMA AS ReferencedSchema,
+                        OBJECT_NAME(F.referenced_object_id) AS ReferencedTable,
+                        COL_NAME(FC.referenced_object_id, FC.referenced_column_id) AS ReferencedColumn
+                    FROM INFORMATION_SCHEMA.KEY_COLUMN_USAGE KCU
+                    JOIN INFORMATION_SCHEMA.REFERENTIAL_CONSTRAINTS RC ON KCU.CONSTRAINT_NAME = RC.CONSTRAINT_NAME
+                    JOIN sys.foreign_keys F ON KCU.CONSTRAINT_NAME = F.name
+                    JOIN sys.foreign_key_columns FC ON F.object_id = FC.constraint_object_id
+                    WHERE KCU.TABLE_SCHEMA = ? AND KCU.TABLE_NAME = ?;
+                """
+                try:
+                    cursor.execute(fk_query, schema_name, table_name)
+                    fk_info = {row[0]: {"schema": row[1], "table": row[2], "column": row[3]} for row in cursor.fetchall()}
+                    for col in columns_data:
+                        if col["name"] in fk_info:
+                            col["is_foreign_key"] = "YES"
+                            col["foreign_key_reference"] = fk_info[col["name"]]
+                except Exception as fk_err:
+                     self.logger.warning(f"Could not retrieve foreign key info for {schema_name}.{table_name}: {fk_err}")
+
+                return {"success": True, "data": {"columns": columns_data}}
             
-            # If no table_name provided, get list of all tables with their column counts
             else:
-                query = """
-                SELECT 
-                    t.TABLE_SCHEMA,
-                    t.TABLE_NAME,
-                    COUNT(c.COLUMN_NAME) as COLUMN_COUNT,
-                    STRING_AGG(c.COLUMN_NAME, ', ') as COLUMNS
-                FROM INFORMATION_SCHEMA.TABLES t
-                JOIN INFORMATION_SCHEMA.COLUMNS c 
-                    ON t.TABLE_SCHEMA = c.TABLE_SCHEMA 
-                    AND t.TABLE_NAME = c.TABLE_NAME
-                WHERE t.TABLE_TYPE = 'BASE TABLE'
-                AND t.TABLE_NAME NOT IN ({})
-                GROUP BY t.TABLE_SCHEMA, t.TABLE_NAME
-                ORDER BY t.TABLE_SCHEMA, t.TABLE_NAME
-                """.format(','.join(['?' for _ in self.system_tables]))
-                cursor.execute(query, list(self.system_tables))
+                # Get list of all non-system tables with column count
+                self.logger.info("Getting list of all tables...")
+                table_list_query = """
+                    SELECT 
+                        t.TABLE_SCHEMA, 
+                        t.TABLE_NAME,
+                        COUNT(c.COLUMN_NAME) as COLUMN_COUNT
+                    FROM INFORMATION_SCHEMA.TABLES t
+                    JOIN INFORMATION_SCHEMA.COLUMNS c 
+                        ON t.TABLE_SCHEMA = c.TABLE_SCHEMA AND t.TABLE_NAME = c.TABLE_NAME
+                    WHERE t.TABLE_TYPE = 'BASE TABLE'
+                      AND t.TABLE_NAME NOT IN ({})
+                    GROUP BY t.TABLE_SCHEMA, t.TABLE_NAME
+                    ORDER BY t.TABLE_SCHEMA, t.TABLE_NAME;
+                """.format(', '.join(['?' for _ in self.system_tables]))
                 
-                tables = []
+                cursor.execute(table_list_query, list(self.system_tables))
+                tables_data = []
                 for row in cursor.fetchall():
-                    columns = row[3].split(", ") if row[3] else []
-                    tables.append({
+                    tables_data.append({
                         "schema": row[0],
                         "name": row[1],
-                        "column_count": row[2],
-                        "columns": columns
+                        "column_count": row[2]
                     })
-                
-                return {
-                    "success": True,
-                    "data": {
-                        "tables": tables
-                    }
-                }
+                return {"success": True, "data": {"tables": tables_data}}
+
+        except pyodbc.Error as db_err:
+            self.logger.error(f"Database error getting schema info: {db_err}")
+            # Check for connection busy error specifically
+            if "Connection is busy" in str(db_err):
+                 return {"success": False, "error": f"Database connection busy. Please try again. Details: {db_err}"}
+            return {"success": False, "error": f"Database error: {db_err}"}
         except Exception as e:
-            self.logger.error(f"Error getting schema information: {str(e)}")
+            self.logger.error(f"Error getting schema info: {str(e)}", exc_info=True)
             return {"success": False, "error": str(e)}
+        finally:
+            # Ensure cursor is closed even if errors occur
+            if cursor:
+                try:
+                    cursor.close()
+                except pyodbc.Error as cursor_err:
+                    self.logger.warning(f"Error closing cursor: {cursor_err}")
     
     async def _get_hierarchical_data(self, parent_table: Dict[str, Any], child_table: Dict[str, Any], 
                                    relationship_config: Dict[str, Any]) -> Dict[str, Any]:

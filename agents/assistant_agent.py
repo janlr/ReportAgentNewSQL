@@ -1,18 +1,24 @@
 from typing import Dict, Any
 from .base_agent import BaseAgent
+from .llm_manager_agent import LLMManagerAgent
 
 class AssistantAgent(BaseAgent):
-    """Agent responsible for user assistance and query processing."""
+    """Agent responsible for providing assistance and explanations."""
     
     def __init__(self, config: Dict[str, Any]):
         """Initialize with configuration."""
-        super().__init__(config)
-        self.required_config = ["llm_manager"]
-    
+        # Pass both the name and config to the BaseAgent
+        super().__init__("assistant_agent", config)
+        
+        # Initialize LLM manager (optional, for enhanced assistance)
+        self.llm_manager = None
+        if config and "llm_manager" in config:
+            self.llm_manager = LLMManagerAgent(config["llm_manager"])
+            
     async def initialize(self) -> bool:
         """Initialize the assistant agent."""
-        if not self.validate_config(self.required_config):
-            return False
+        if self.llm_manager:
+            return await self.llm_manager.initialize()
         return True
     
     async def process(self, request: Dict[str, Any]) -> Dict[str, Any]:

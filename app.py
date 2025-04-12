@@ -9,6 +9,7 @@ import pandas as pd
 from agents import initialize_environment
 import os
 from utils.schema_configurator import SchemaConfigurator
+import plotly.graph_objects as go
 
 # Add this after initialize_environment()
 def check_environment():
@@ -61,24 +62,65 @@ def init_session_state():
         st.session_state.config = {
             'database': {
                 'type': 'mssql',
-                'host': os.getenv('DB_HOST'),
-                'port': os.getenv('DB_PORT'),
-                'database': os.getenv('DB_NAME'),
-                'driver': os.getenv('DB_DRIVER'),
+                'host': os.getenv('DB_HOST', ''),
+                'port': os.getenv('DB_PORT', ''),
+                'database': os.getenv('DB_NAME', ''),
+                'driver': os.getenv('DB_DRIVER', ''),
                 'trusted_connection': os.getenv('DB_TRUSTED_CONNECTION', 'yes'),
-                'user': os.getenv('DB_USER'),
-                'password': os.getenv('DB_PASSWORD'),
+                'user': os.getenv('DB_USER', ''),
+                'password': os.getenv('DB_PASSWORD', ''),
                 'echo': os.getenv('DB_ECHO', 'True').lower() == 'true',
                 'cache_dir': './cache/database'
             },
             'api_keys': {
-                'anthropic': os.getenv('ANTHROPIC_API_KEY')
+                'anthropic': os.getenv('ANTHROPIC_API_KEY', '')
             },
             'paths': {
                 'output_dir': './reports',
                 'template_dir': './templates',
                 'cache_dir': './cache',
                 'logs_dir': './logs'
+            },
+            # Add missing agent configurations
+            'data_manager': {
+                'cache_dir': './cache/data'
+            },
+            'user_interface': {
+                'theme': 'light'
+            },
+            'visualization': {
+                'theme': 'streamlit',
+                'cache_dir': './cache/visualizations'
+            },
+            'report_generator': {
+                'config': {
+                    'templates_dir': './templates',
+                    'report_format': ['html', 'pdf']
+                },
+                'output_dir': './reports'
+            },
+            'insight_generator': {
+                'cache_dir': './cache/insights',
+                'model': 'claude-3-sonnet-20240229',
+                'llm_manager': {
+                    'provider': 'anthropic',
+                    'model': 'claude-3.7-sonnet-20240620',
+                    'api_key': os.getenv('ANTHROPIC_API_KEY', ''),
+                    'cache_dir': './cache/llm',
+                    'temperature': 0.7,
+                    'max_tokens': 4000
+                }
+            },
+            'assistant': {
+                'model': 'claude-3-sonnet-20240229'
+            },
+            'llm_manager': {
+                'provider': 'anthropic',
+                'model': 'claude-3.7-sonnet-20240620',
+                'api_key': os.getenv('ANTHROPIC_API_KEY', ''),
+                'cache_dir': './cache/llm',
+                'temperature': 0.7,
+                'max_tokens': 4000
             }
         }
 
@@ -86,8 +128,18 @@ def init_session_state():
 async def init_components():
     """Initialize application components."""
     try:
-        # Initialize orchestrator
-        orchestrator = MasterOrchestratorAgent(st.session_state.config)
+        # Log config for debugging
+        logger.info(f"Initializing with config: {st.session_state.config}")
+        
+        # Make sure all required sections are in the config
+        ensure_config_structure()
+        
+        # Initialize orchestrator with all required parameters
+        orchestrator = MasterOrchestratorAgent(
+            config=st.session_state.config,
+            output_dir=st.session_state.config.get("paths", {}).get("output_dir", "./reports"),
+            anthropic_api_key=st.session_state.config.get("api_keys", {}).get("anthropic", "")
+        )
         success = await orchestrator.initialize()
         
         if not success:
@@ -104,14 +156,101 @@ async def init_components():
         return True
         
     except Exception as e:
+        logger.error(f"Error initializing components: {str(e)}", exc_info=True)
         st.error(f"Error initializing components: {str(e)}")
         return False
+
+def ensure_config_structure():
+    """Ensure all required sections are in the config."""
+    # Check and add paths if missing
+    if "paths" not in st.session_state.config:
+        st.session_state.config["paths"] = {
+            "output_dir": "./reports",
+            "template_dir": "./templates",
+            "cache_dir": "./cache",
+            "logs_dir": "./logs"
+        }
+    
+    # Check and add api_keys if missing
+    if "api_keys" not in st.session_state.config:
+        st.session_state.config["api_keys"] = {
+            "anthropic": os.getenv("ANTHROPIC_API_KEY", "")
+        }
+    
+    # Add LLM manager configuration
+    if "llm_manager" not in st.session_state.config:
+        st.session_state.config["llm_manager"] = {
+            "provider": "anthropic",
+            "model": "claude-3.7-sonnet-20240620",
+            "api_key": st.session_state.config.get("api_keys", {}).get("anthropic", ""),
+            "cache_dir": "./cache/llm",
+            "temperature": 0.7,
+            "max_tokens": 4000
+        }
+    
+    # Required agent config sections
+    required_sections = [
+        "database", "data_manager", "user_interface", "visualization", 
+        "report_generator", "insight_generator", "assistant"
+    ]
+    
+    # Add missing sections with minimal config
+    for section in required_sections:
+        if section not in st.session_state.config:
+            if section == "database":
+                st.session_state.config[section] = {
+                    'type': 'mssql',
+                    'host': os.getenv('DB_HOST', ''),
+                    'port': os.getenv('DB_PORT', ''),
+                    'database': os.getenv('DB_NAME', ''),
+                    'driver': os.getenv('DB_DRIVER', ''),
+                    'trusted_connection': os.getenv('DB_TRUSTED_CONNECTION', 'yes'),
+                    'user': os.getenv('DB_USER', ''),
+                    'password': os.getenv('DB_PASSWORD', ''),
+                    'echo': os.getenv('DB_ECHO', 'True').lower() == 'true',
+                    'cache_dir': './cache/database'
+                }
+            elif section == "report_generator":
+                st.session_state.config[section] = {
+                    'config': {
+                        'templates_dir': './templates',
+                        'report_format': ['html', 'pdf']
+                    },
+                    'output_dir': './reports'
+                }
+            elif section == "insight_generator":
+                st.session_state.config[section] = {
+                    'cache_dir': './cache/insights',
+                    'llm_manager': {
+                        'provider': 'anthropic',
+                        'model': 'claude-3.7-sonnet-20240620',
+                        'api_key': st.session_state.config.get("api_keys", {}).get("anthropic", ""),
+                        'cache_dir': './cache/llm',
+                        'temperature': 0.7,
+                        'max_tokens': 4000
+                    }
+                }
+            else:
+                st.session_state.config[section] = {
+                    'cache_dir': f'./cache/{section}'
+                }
+    
+    # Make sure insight_generator has llm_manager config
+    if "insight_generator" in st.session_state.config and "llm_manager" not in st.session_state.config["insight_generator"]:
+        st.session_state.config["insight_generator"]["llm_manager"] = {
+            'provider': 'anthropic',
+            'model': 'claude-3.7-sonnet-20240620',
+            'api_key': st.session_state.config.get("api_keys", {}).get("anthropic", ""),
+            'cache_dir': './cache/llm',
+            'temperature': 0.7,
+            'max_tokens': 4000
+        }
 
 def main():
     # Initialize session state first
     init_session_state()
     
-    st.title("AdventureWorks Business Intelligence Dashboard")
+    st.title("Business Intelligence Dashboard")
     
     # Initialize orchestrator if not already present
     if "orchestrator" not in st.session_state:
@@ -125,6 +264,10 @@ def main():
                 
                 if not success:
                     st.error("Failed to initialize application components")
+                    
+                    # Display configuration for debugging
+                    if st.checkbox("Show Configuration"):
+                        st.code(json.dumps(st.session_state.config, indent=2, default=str))
                     return
         except Exception as e:
             error_msg = str(e)
@@ -143,7 +286,7 @@ def main():
     st.sidebar.title("Navigation")
     page = st.sidebar.selectbox(
         "Choose a page", 
-        ["Schema Explorer", "Schema Configuration", "Report Generator", "Data Visualization"]
+        ["Schema Explorer", "Schema Configuration", "Report Generator"]
     )
     
     try:
@@ -154,17 +297,28 @@ def main():
         if page == "Schema Explorer":
             loop.run_until_complete(schema_explorer())
         elif page == "Schema Configuration":
-            schema_configuration()
+            loop.run_until_complete(schema_configuration())
         elif page == "Report Generator":
-            report_generator()
-        elif page == "Data Visualization":
-            data_visualization()
+            loop.run_until_complete(report_generator())
             
         # Close the event loop
         loop.close()
     except Exception as e:
-        logger.error(f"Error in application: {str(e)}")
+        logger.error(f"Error in application: {str(e)}", exc_info=True)
         st.error(f"An error occurred: {str(e)}")
+
+        # Allow viewing configuration for debugging
+        if st.checkbox("Show Debug Information"):
+            st.subheader("Configuration")
+            st.code(json.dumps(st.session_state.config, indent=2, default=str))
+            
+            if "orchestrator" in st.session_state:
+                st.subheader("Orchestrator Status")
+                st.write(f"Orchestrator initialized: {st.session_state.orchestrator is not None}")
+                if st.session_state.orchestrator:
+                    st.write(f"Active agents: {list(st.session_state.orchestrator.agents.keys())}")
+            else:
+                st.write("Orchestrator not initialized.")
 
 async def schema_explorer():
     st.header("Database Schema Explorer")
@@ -223,13 +377,8 @@ async def schema_explorer():
             return
             
         selected_table = st.selectbox("Select Table", sorted(tables), key="schema_explorer_table")
-    except Exception as e:
-        st.error(f"Error in schema explorer: {str(e)}")
-        st.write("Please check the logs for more details.")
-        return
-    
-    if selected_table:
-        try:
+        
+        if selected_table:
             # Get detailed schema information for the selected table
             table_result = await st.session_state.orchestrator.process({
                 "workflow": "data_analysis",
@@ -413,74 +562,12 @@ WHERE {first_column} IN (
                         st.dataframe(sample_df)
                     else:
                         st.error(f"Failed to get sample data: {sample_result.get('error')}")
-        except Exception as e:
-            st.error(f"Error displaying table information: {str(e)}")
-            st.write("Please check the logs for more details.")
+    except Exception as e:
+        st.error(f"Error in schema explorer: {str(e)}")
+        st.write("Please check the logs for more details.")
+        return
 
-def sales_analysis():
-    st.header("Sales Analysis")
-    
-    # Date range selection
-    col1, col2 = st.columns(2)
-    with col1:
-        start_date = st.date_input("Start Date")
-    with col2:
-        end_date = st.date_input("End Date")
-    
-    # Product category selection
-    result = asyncio.run(
-        st.session_state.orchestrator.process({
-            "workflow": "data_analysis",
-            "action": "get_product_categories"
-        })
-    )
-    
-    if result.get("success"):
-        categories = result["data"]
-        selected_categories = st.multiselect("Product Categories", categories)
-    
-    # Analysis options
-    generate_summary = st.checkbox("Generate AI Summary", value=True)
-    include_charts = st.checkbox("Include Charts", value=True)
-    
-    if st.button("Generate Analysis"):
-        if not selected_categories:
-            st.warning("Please select at least one product category")
-            return
-            
-        result = asyncio.run(
-            st.session_state.orchestrator.process({
-                "workflow": "data_analysis",
-                "action": "analyze_sales",
-                "parameters": {
-                    "start_date": start_date.strftime("%Y-%m-%d"),
-                    "end_date": end_date.strftime("%Y-%m-%d"),
-                    "categories": selected_categories,
-                    "generate_summary": generate_summary,
-                    "include_charts": include_charts
-                }
-            })
-        )
-        
-        if result.get("success"):
-            # Display summary if requested
-            if generate_summary and result["data"].get("summary"):
-                st.subheader("Analysis Summary")
-                st.write(result["data"]["summary"])
-            
-            # Display charts if requested
-            if include_charts and result["data"].get("charts"):
-                st.subheader("Sales Charts")
-                for chart in result["data"]["charts"]:
-                    st.plotly_chart(chart)
-            
-            # Display data tables
-            st.subheader("Sales Data")
-            st.dataframe(result["data"]["sales_data"])
-        else:
-            st.error(f"Failed to generate analysis: {result.get('error')}")
-
-def report_generator():
+async def report_generator():
     st.header("Report Generator")
     
     # Add tabs for different report generation modes
@@ -492,16 +579,16 @@ def report_generator():
         # Example prompts
         st.markdown("""
         **Example prompts you can try:**
-        - Show me sales performance by product category for the last quarter
-        - Generate a customer analysis report showing top spenders and their buying patterns
-        - Create an inventory status report highlighting items that need restocking
-        - Analyze sales trends by region for the past year
+        - Show me performance metrics by category for the last quarter
+        - Generate an analysis report showing top items and their patterns
+        - Create a status report highlighting items that need attention
+        - Analyze trends by region for the past year
         """)
         
         # User prompt input
         user_prompt = st.text_area(
             "Describe the report you want to generate",
-            placeholder="E.g., Show me sales performance by product category for the last quarter",
+            placeholder="E.g., Show me performance metrics by category for the last quarter",
             height=100
         )
         
@@ -522,8 +609,7 @@ def report_generator():
                 
             try:
                 with st.spinner("Generating your report..."):
-                    result = asyncio.run(
-                        st.session_state.orchestrator.process({
+                    result = await st.session_state.orchestrator.process({
                             "workflow": "report_generation",
                             "action": "generate_report_from_prompt",
                             "parameters": {
@@ -533,7 +619,6 @@ def report_generator():
                                 "output_format": output_format
                             }
                         })
-                    )
                     
                     if result.get("success"):
                         # Display report sections
@@ -569,239 +654,247 @@ def report_generator():
     with tab2:
         st.subheader("Advanced Report Configuration")
         
-        # Report type selection
-        report_type = st.selectbox(
-            "Report Type",
-            ["Sales Analysis", "Customer Insights", "Inventory Status", "Financial Performance"],
-            key="advanced_report_type"
+        # Get the available tables for the user to choose from
+        schema_info = await st.session_state.orchestrator.process({
+            "workflow": "data_analysis",
+            "action": "get_schema_info"
+        })
+        
+        if not schema_info.get("success"):
+            st.error("Failed to get schema information")
+            return
+            
+        tables = schema_info.get("data", {}).get("tables", [])
+        if not tables:
+            st.warning("No tables found in the database.")
+            return
+        table_options = [f"{table['schema']}.{table['name']}" for table in tables]
+        
+        # --- Data Selection --- 
+        st.markdown("#### Data Selection")
+        primary_table = st.selectbox(
+            "Primary Table",
+            table_options,
+            key="primary_table",
+            index=0 # Default to the first table
         )
         
-        # Time period selection
-        col1, col2 = st.columns(2)
-        with col1:
-            start_date = st.date_input("Start Date", key="advanced_start_date")
-        with col2:
-            end_date = st.date_input("End Date", key="advanced_end_date")
-        
-        # Report-specific parameters
-        if report_type == "Sales Analysis":
-            st.subheader("Sales Analysis Parameters")
-            product_categories = st.multiselect(
-                "Product Categories",
-                ["All"] + asyncio.run(get_product_categories()),
-                key="sales_product_categories"
-            )
-            include_customer_details = st.checkbox("Include Customer Details", value=True, key="sales_customer_details")
-            sales_metrics = st.multiselect(
-                "Sales Metrics",
-                ["Revenue", "Units Sold", "Profit Margin", "Average Order Value"],
-                default=["Revenue", "Units Sold"],
-                key="sales_metrics"
-            )
+        # Fields to include (dynamic based on selected table)
+        dimensions = []
+        metrics = []
+        date_columns = []
+        all_columns = [] 
+        if primary_table:
+            schema_name, table_name = primary_table.split(".")
+            table_info = await st.session_state.orchestrator.process({
+                "workflow": "data_analysis",
+                "action": "get_schema_info",
+                "parameters": {"table_name": table_name, "schema_name": schema_name}
+            })
             
-        elif report_type == "Customer Insights":
-            st.subheader("Customer Analysis Parameters")
-            customer_segments = st.multiselect(
-                "Customer Segments",
-                ["All", "High Value", "Medium Value", "Low Value"],
-                default=["All"],
-                key="customer_segments"
+            if table_info.get("success") and table_info.get("data", {}).get("columns"):
+                columns = table_info["data"]["columns"]
+                all_columns = [col["name"] for col in columns]
+                text_columns = [col["name"] for col in columns if col["data_type"].lower() in ("varchar", "nvarchar", "char", "text", "nchar", "string")]
+                numeric_columns = [col["name"] for col in columns if col["data_type"].lower() in ("int", "integer", "bigint", "smallint", "tinyint", "decimal", "numeric", "float", "real", "double", "money", "smallmoney")]
+                date_columns = [col["name"] for col in columns if col["data_type"].lower() in ("date", "datetime", "datetime2", "smalldatetime", "timestamp")]
+                
+                dimensions = st.multiselect(
+                    "Dimensions (Group By)",
+                    text_columns + date_columns,
+                    key="dimensions",
+                    help="Select columns to group or categorize data (e.g., Product Name, Region, Date)."
+                )
+                
+                metrics = st.multiselect(
+                    "Metrics (Aggregate)",
+                    numeric_columns,
+                    key="metrics",
+                    help="Select numerical columns to measure or aggregate (e.g., Sales Amount, Quantity)."
+                )
+            else:
+                 st.warning("Could not retrieve column information for the selected table.")
+
+        # --- Time Period --- 
+        st.markdown("#### Time Period (Optional)")
+        if date_columns: # Only show if date columns are available
+            time_column = st.selectbox("Time Column", ["None"] + date_columns, key="time_column")
+            if time_column != "None":
+                col1, col2 = st.columns(2)
+                with col1:
+                    start_date = st.date_input("Start Date", key="advanced_start_date")
+                with col2:
+                    end_date = st.date_input("End Date", key="advanced_end_date")
+            else:
+                start_date = None
+                end_date = None
+        else:
+            st.info("No date/time columns detected in the selected table for time period filtering.")
+            time_column = None
+            start_date = None
+            end_date = None
+
+        # --- Filtering --- 
+        st.markdown("#### Filters (Optional)")
+        with st.expander("Add Filters"):
+            if all_columns:
+                filter_columns = st.multiselect(
+                    "Filter Columns",
+                    all_columns,
+                    key="filter_columns"
+                )
+                
+                filters = {}
+                # Need full column info again here for type checking
+                # This is slightly inefficient, consider caching table_info if performance is an issue
+                if filter_columns and table_info.get("success"):
+                    columns_detailed = table_info["data"]["columns"]
+                    for col_name in filter_columns:
+                        col_info = next((c for c in columns_detailed if c["name"] == col_name), None)
+                        if col_info:
+                            col_type = col_info["data_type"].lower()
+                            if col_type in ("varchar", "nvarchar", "char", "text", "nchar", "string"):
+                                filters[col_name] = st.text_input(f"Filter for {col_name} (text)", key=f"filter_{col_name}")
+                            elif col_type in ("int", "integer", "bigint", "smallint", "tinyint", "decimal", "numeric", "float", "real", "double", "money", "smallmoney"):
+                                # Simple equals for now, range could be added
+                                filters[col_name] = st.number_input(f"Filter for {col_name} (number)", key=f"filter_{col_name}")
+                            elif col_type in ("date", "datetime", "datetime2", "smalldatetime", "timestamp"):
+                                filter_date = st.date_input(f"Date for {col_name}", key=f"filter_{col_name}")
+                                filters[col_name] = filter_date.strftime("%Y-%m-%d")
+            else:
+                st.write("Select a primary table to enable filters.")
+                filters = {}
+
+        # --- Visualization Selection --- 
+        st.markdown("#### Visualizations (Optional)")
+        include_charts = st.checkbox("Include Charts in Report", value=True, key="advanced_charts")
+        chart_types = []
+        if include_charts:
+            chart_options = ["Auto", "Bar Chart", "Line Chart", "Scatter Plot", "Pie Chart", "Table"] # Add more as needed
+            chart_types = st.multiselect(
+                "Select Chart Types",
+                chart_options,
+                default=["Auto"],
+                key="chart_types",
+                help="Select specific charts. 'Auto' tries to generate relevant charts based on data."
             )
-            include_demographics = st.checkbox("Include Demographics", value=True, key="customer_demographics")
-            include_behavior = st.checkbox("Include Buying Behavior", value=True, key="customer_behavior")
-            
-        elif report_type == "Inventory Status":
-            st.subheader("Inventory Parameters")
-            warehouse_locations = st.multiselect(
-                "Warehouse Locations",
-                ["All"] + asyncio.run(get_warehouse_locations()),
-                key="inventory_locations"
-            )
-            include_reorder = st.checkbox("Include Reorder Suggestions", value=True, key="inventory_reorder")
-            include_trends = st.checkbox("Include Historical Trends", value=True, key="inventory_trends")
-            
-        elif report_type == "Financial Performance":
-            st.subheader("Financial Parameters")
-            metrics = st.multiselect(
-                "Financial Metrics",
-                ["Revenue", "Costs", "Profit", "ROI", "Margins"],
-                default=["Revenue", "Profit"],
-                key="financial_metrics"
-            )
-            comparison_period = st.selectbox(
-                "Compare With",
-                ["Previous Period", "Same Period Last Year", "None"],
-                key="financial_comparison"
-            )
+
+        # --- Other Report Options --- 
+        st.markdown("#### Report Options")
+        include_insights = st.checkbox("Include AI Insights", value=True, key="advanced_insights")
+        output_format = st.selectbox(
+            "Output Format",
+            ["Interactive Dashboard", "PDF Report", "Excel Spreadsheet", "HTML Report"],
+            key="advanced_output_format"
+        )
         
-        # Common options
-        st.subheader("Report Options")
-        col1, col2 = st.columns(2)
-        with col1:
-            include_charts = st.checkbox("Include Charts", value=True, key="advanced_charts")
-            include_insights = st.checkbox("Include AI Insights", value=True, key="advanced_insights")
-        with col2:
-            output_format = st.selectbox(
-                "Output Format",
-                ["Interactive Dashboard", "PDF Report", "Excel Spreadsheet", "HTML Report"],
-                key="advanced_output_format"
-            )
-        
-        if st.button("Generate Report", type="primary", key="advanced_generate"):
+        # --- Generate Button --- 
+        if st.button("Generate Advanced Report", type="primary", key="advanced_generate"):
+            # Basic validation
+            if not primary_table:
+                st.warning("Please select a Primary Table.")
+                return
+            if not metrics:
+                st.warning("Please select at least one Metric.")
+                return
+
             try:
                 with st.spinner("Generating your report..."):
-                    # Build parameters based on report type
+                    # Build parameters for the backend
                     params = {
-                        "report_type": report_type,
-                        "start_date": start_date.strftime("%Y-%m-%d"),
-                        "end_date": end_date.strftime("%Y-%m-%d"),
+                        "primary_table": primary_table,
+                        "dimensions": dimensions,
+                        "metrics": metrics,
+                        "filters": filters,
                         "include_charts": include_charts,
+                        "chart_types": chart_types, # Pass selected chart types
                         "include_insights": include_insights,
                         "output_format": output_format
                     }
                     
-                    # Add report-specific parameters
-                    if report_type == "Sales Analysis":
+                    # Add time period if selected
+                    if time_column and time_column != "None" and start_date and end_date:
                         params.update({
-                            "product_categories": product_categories,
-                            "include_customer_details": include_customer_details,
-                            "sales_metrics": sales_metrics
-                        })
-                    elif report_type == "Customer Insights":
-                        params.update({
-                            "customer_segments": customer_segments,
-                            "include_demographics": include_demographics,
-                            "include_behavior": include_behavior
-                        })
-                    elif report_type == "Inventory Status":
-                        params.update({
-                            "warehouse_locations": warehouse_locations,
-                            "include_reorder": include_reorder,
-                            "include_trends": include_trends
-                        })
-                    elif report_type == "Financial Performance":
-                        params.update({
-                            "metrics": metrics,
-                            "comparison_period": comparison_period
+                            "time_column": time_column,
+                            "start_date": start_date.strftime("%Y-%m-%d"),
+                            "end_date": end_date.strftime("%Y-%m-%d"),
                         })
                     
-                    result = asyncio.run(
-                        st.session_state.orchestrator.process({
-                            "workflow": "report_generation",
-                            "action": "generate_report",
-                            "parameters": params
-                        })
-                    )
+                    # Call orchestrator with generate_report action
+                    result = await st.session_state.orchestrator.process({
+                        "workflow": "report_generation",
+                        "action": "generate_report", # Use the structured action
+                        "parameters": params
+                    })
                     
+                    # Display results (same logic as before)
                     if result.get("success"):
-                        # Display report sections
-                        if result["data"].get("summary"):
+                        report_data = result.get("data", {})
+                        if report_data.get("summary"):
                             st.subheader("Executive Summary")
-                            st.write(result["data"]["summary"])
+                            st.write(report_data["summary"])
                         
-                        if result["data"].get("charts") and include_charts:
+                        if report_data.get("charts"):
                             st.subheader("Visualizations")
-                            for chart in result["data"]["charts"]:
-                                st.plotly_chart(chart)
+                            for chart in report_data["charts"]:
+                                # Ensure chart is a Plotly figure
+                                if isinstance(chart, go.Figure):
+                                     st.plotly_chart(chart)
+                                else:
+                                     logger.warning(f"Item in charts list is not a Plotly Figure: {type(chart)}")
                         
-                        if result["data"].get("insights") and include_insights:
+                        if report_data.get("insights"):
                             st.subheader("Key Insights")
-                            st.write(result["data"]["insights"])
+                            st.write(report_data["insights"])
                         
-                        if result["data"].get("data_tables"):
+                        if report_data.get("data_tables"):
                             st.subheader("Detailed Data")
-                            for table_name, df in result["data"]["data_tables"].items():
+                            for table_name, df_data in report_data["data_tables"].items():
                                 st.write(f"**{table_name}**")
-                                st.dataframe(df)
+                                # Handle potential non-DataFrame data
+                                if isinstance(df_data, pd.DataFrame):
+                                     st.dataframe(df_data)
+                                else:
+                                     st.write("Data is not in a table format.")
+                                     st.code(str(df_data))
                         
-                        # Download options
-                        if result["data"].get("report_url"):
+                        if report_data.get("report_url"):
                             st.success("Report generated successfully!")
-                            st.markdown(f"📥 [Download Full Report]({result['data']['report_url']})")
+                            st.markdown(f"📥 [Download Full Report]({report_data['report_url']})")
+                        elif not any(report_data.get(key) for key in ["summary", "charts", "insights", "data_tables"]):
+                            st.info("Report generated, but no specific content (summary, charts, insights, data) was produced.")
+                            if report_data.get("generated_sql"):
+                                st.code(f"Generated SQL:\n{report_data['generated_sql']}", language="sql")
+
                     else:
-                        st.error(f"Failed to generate report: {result.get('error')}")
+                        st.error(f"Failed to generate report: {result.get('error', 'Unknown error')}")
+                        # Optionally show generated SQL if available in error
+                        if result.get('data', {}).get("generated_sql"):
+                             st.code(f"Generated SQL (failed):\n{result['data']['generated_sql']}", language="sql")
                         
             except Exception as e:
-                st.error(f"An error occurred: {str(e)}")
+                st.error(f"An unexpected error occurred: {str(e)}")
+                logger.error(f"UI error during advanced report generation: {e}", exc_info=True)
 
-async def get_product_categories():
-    """Helper function to get product categories."""
+# Remove sales_analysis function and implement more generic helper functions
+
+async def get_table_hierarchies():
+    """Helper function to get table hierarchies (parent-child relationships)."""
     result = await st.session_state.orchestrator.process({
-        "workflow": "data_analysis",
-        "action": "get_product_categories"
+        "workflow": "schema_configuration",
+        "action": "get_table_hierarchies"
     })
     return result.get("data", []) if result.get("success") else []
 
-async def get_warehouse_locations():
-    """Helper function to get warehouse locations."""
+async def get_lookup_tables():
+    """Helper function to get lookup tables (dimension tables)."""
     result = await st.session_state.orchestrator.process({
-        "workflow": "data_analysis",
-        "action": "get_warehouse_locations"
+        "workflow": "schema_configuration",
+        "action": "get_lookup_tables"
     })
     return result.get("data", []) if result.get("success") else []
 
-def data_visualization():
-    st.header("Data Visualization")
-    
-    # Visualization type selection
-    viz_type = st.selectbox(
-        "Visualization Type",
-        ["Sales Trends", "Product Performance", "Customer Segments", "Geographic Analysis"]
-    )
-    
-    # Time period selection
-    col1, col2 = st.columns(2)
-    with col1:
-        start_date = st.date_input("Start Date")
-    with col2:
-        end_date = st.date_input("End Date")
-    
-    # Visualization-specific parameters
-    if viz_type == "Sales Trends":
-        grouping = st.selectbox("Group By", ["Day", "Week", "Month", "Quarter", "Year"])
-        include_forecast = st.checkbox("Include Forecast", value=False)
-    elif viz_type == "Product Performance":
-        metric = st.selectbox("Metric", ["Revenue", "Units Sold", "Profit Margin"])
-        top_n = st.slider("Top N Products", 5, 50, 10)
-    elif viz_type == "Customer Segments":
-        segment_by = st.selectbox("Segment By", ["Purchase Frequency", "Average Order Value", "Customer Lifetime Value"])
-        n_segments = st.slider("Number of Segments", 2, 10, 5)
-    elif viz_type == "Geographic Analysis":
-        region_level = st.selectbox("Region Level", ["Country", "State/Province", "City"])
-        metric = st.selectbox("Metric", ["Sales", "Customers", "Orders"])
-    
-    if st.button("Generate Visualization"):
-        result = asyncio.run(
-            st.session_state.orchestrator.process({
-                "workflow": "data_visualization",
-                "action": "create_visualization",
-                "parameters": {
-                    "viz_type": viz_type,
-                    "start_date": start_date.strftime("%Y-%m-%d"),
-                    "end_date": end_date.strftime("%Y-%m-%d"),
-                    "options": {
-                        "grouping": grouping if viz_type == "Sales Trends" else None,
-                        "include_forecast": include_forecast if viz_type == "Sales Trends" else None,
-                        "metric": metric if viz_type in ["Product Performance", "Geographic Analysis"] else None,
-                        "top_n": top_n if viz_type == "Product Performance" else None,
-                        "segment_by": segment_by if viz_type == "Customer Segments" else None,
-                        "n_segments": n_segments if viz_type == "Customer Segments" else None,
-                        "region_level": region_level if viz_type == "Geographic Analysis" else None
-                    }
-                }
-            })
-        )
-        
-        if result.get("success"):
-            st.plotly_chart(result["data"]["chart"])
-            
-            if result["data"].get("insights"):
-                st.subheader("Key Insights")
-                st.write(result["data"]["insights"])
-        else:
-            st.error(f"Failed to generate visualization: {result.get('error')}")
-
-def schema_configuration():
+async def schema_configuration():
     st.header("Schema Configuration")
     
     # Create tabs for different sections
@@ -811,12 +904,10 @@ def schema_configuration():
         with st.expander("Table Categories", expanded=False):
             try:
                 # Get schema information through orchestrator
-                schema_info = asyncio.run(
-                    st.session_state.orchestrator.process({
-                        "workflow": "data_analysis",
-                        "action": "get_schema_info"
-                    })
-                )
+                schema_info = await st.session_state.orchestrator.process({
+                    "workflow": "data_analysis",
+                    "action": "get_schema_info"
+                })
                 
                 if schema_info.get("success"):
                     tables = schema_info["data"]["tables"]
@@ -844,12 +935,10 @@ def schema_configuration():
         with st.expander("Suggested Joins", expanded=False):
             try:
                 # Get schema information first to get list of tables
-                schema_info = asyncio.run(
-                    st.session_state.orchestrator.process({
-                        "workflow": "data_analysis",
-                        "action": "get_schema_info"
-                    })
-                )
+                schema_info = await st.session_state.orchestrator.process({
+                    "workflow": "data_analysis",
+                    "action": "get_schema_info"
+                })
                 
                 if not schema_info.get("success"):
                     st.error("Failed to get schema information")
@@ -860,16 +949,14 @@ def schema_configuration():
                 
                 # Get join patterns for each table
                 for table in tables:
-                    join_patterns = asyncio.run(
-                        st.session_state.orchestrator.process({
-                            "workflow": "schema_configuration",
-                            "action": "get_join_patterns",
-                            "parameters": {
-                                "table_name": table["name"],
-                                "schema_name": table["schema"]
-                            }
-                        })
-                    )
+                    join_patterns = await st.session_state.orchestrator.process({
+                        "workflow": "schema_configuration",
+                        "action": "get_join_patterns",
+                        "parameters": {
+                            "table_name": table["name"],
+                            "schema_name": table["schema"]
+                        }
+                    })
                     
                     if join_patterns.get("success"):
                         all_join_patterns.extend(join_patterns["data"]["join_patterns"])

@@ -29,9 +29,11 @@ class MasterOrchestratorAgent(BaseAgent):
             "user_interface": UserInterfaceAgent(config["user_interface"]),
             "visualization": VisualizationAgent(config["visualization"]),
             "report_generator": ReportGeneratorAgent(
-                config=config["report_generator"]["config"],
+                report_config=config["report_generator"]["config"],
+                db_config=config["database"],
                 output_dir=config["report_generator"]["output_dir"],
-                anthropic_api_key=self.anthropic_api_key
+                anthropic_api_key=self.anthropic_api_key,
+                orchestrator=self
             ),
             "insight_generator": InsightGeneratorAgent(config["insight_generator"]),
             "assistant": AssistantAgent(config.get("assistant", {}))
@@ -102,75 +104,59 @@ class MasterOrchestratorAgent(BaseAgent):
             return False
     
     async def _handle_report_generation(self, input_data: Dict[str, Any]) -> Dict[str, Any]:
-        """Handle report generation workflow."""
+        """Handle report generation workflow by delegating to the ReportGeneratorAgent."""
+        parameters = input_data.get("parameters", {})
+        action = input_data.get("action")
+        report_type_for_logging = parameters.get("report_type") or parameters.get("prompt", "N/A")
+
+        # Log the start
+        start_time = datetime.now()
+        self.logger.info(f"Starting report generation workflow. Action: {action}, Details: {report_type_for_logging}")
+
         try:
-            # Extract parameters
-            report_type = input_data.get("report_type")
-            parameters = input_data.get("parameters", {})
-            generate_summary = input_data.get("generate_summary", False)
-            
-            # Get data from database
-            db_result = await self.agents["database"].process({
-                "action": "execute_query",
-                "query": parameters.get("query"),
-                "params": parameters.get("query_params", {})
-            })
-            
-            # Clean and transform data
-            data_result = await self.agents["data_manager"].process({
-                "action": "clean_data",
-                "data": db_result["data"]
-            })
-            
-            # Generate report
-            report_result = await self.agents["report_generator"].process({
-                "workflow": "report_generation",
-                "action": "generate_report",
-                "parameters": {
-                    "report_type": report_type,
-                    "data": data_result["data"],
-                    "options": parameters
-                }
-            })
-            
-            # Generate insights if requested
-            if generate_summary:
-                insight_result = await self.agents["insight_generator"].process({
-                    "action": "generate_summary",
-                    "data": data_result["data"],
-                    "metadata": {
-                        "report_type": report_type,
-                        "parameters": parameters
-                    }
-                })
-                
-                report_result["data"]["insights"] = insight_result["data"]
-            
-            # Log workflow completion
+            # Directly call the ReportGeneratorAgent, passing the original request.
+            # It should handle data gathering, cleaning (if needed), generation, insights, etc., based on the action.
+            report_result = await self.agents["report_generator"].process(input_data)
+
+            # Check if the report generation itself failed
+            if not report_result.get("success"):
+                 # Log the specific error from the agent
+                 agent_error = report_result.get('error', 'Unknown error from ReportGeneratorAgent')
+                 self.logger.error(f"ReportGeneratorAgent failed during processing: {agent_error}")
+                 raise RuntimeError(f"ReportGeneratorAgent failed: {agent_error}")
+
+            # Log completion
+            end_time = datetime.now()
+            duration = (end_time - start_time).total_seconds()
+            self.logger.info(f"Report generation workflow completed successfully in {duration:.2f}s.")
             self.workflow_history.append({
                 "workflow": "report_generation",
-                "report_type": report_type,
+                "action": action,
                 "parameters": parameters,
-                "timestamp": datetime.now().isoformat(),
+                "timestamp": end_time.isoformat(),
+                "duration_seconds": duration,
                 "status": "completed"
             })
-            
-            return report_result
-            
+            return report_result # Return the successful result from ReportGeneratorAgent
+
         except Exception as e:
-            self.logger.error(f"Error in report generation workflow: {str(e)}")
-            
-            # Log workflow failure
+            end_time = datetime.now()
+            duration = (end_time - start_time).total_seconds()
+            # Log the error with traceback
+            self.logger.error(f"Error in report generation workflow '{action}' after {duration:.2f}s: {str(e)}", exc_info=True)
+
+            # Log failure details
             self.workflow_history.append({
                 "workflow": "report_generation",
-                "report_type": report_type,
+                "action": action,
                 "parameters": parameters,
-                "timestamp": datetime.now().isoformat(),
+                "timestamp": end_time.isoformat(),
+                "duration_seconds": duration,
                 "status": "failed",
                 "error": str(e)
             })
-            
-            raise
+            # Return a standardized error format including the original error type/message
+            return {"success": False, "error": f"Master orchestrator workflow failed: {type(e).__name__}: {str(e)}"}
     
     async def _handle_data_analysis(self, input_data: Dict[str, Any]) -> Dict[str, Any]:
         """Handle data analysis workflow."""
